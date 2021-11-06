@@ -1,7 +1,6 @@
-## Using the data from Subt simulator
+## Data sample from Subt simulator
 
-Download RGBD images from:
-[https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vtszih9-CQowisk0VD?usp=sharing](https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vtszih9-CQowisk0VD?usp=sharing)
+Download [RGB-D images](https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vtszih9-CQowisk0VD?usp=sharing)
 
 And place it to the folder:
 ```
@@ -13,7 +12,7 @@ Explore the depth images data from the simulator (requires
 installation):
 [./notebooks/explore_data.ipynb](https://github.com/RuslanAgishev/supervised_depth_correction/blob/master/notebooks/explore_data.ipynb)
 
-## Using GradSLAM to construct a map
+## Mapping with [GradSLAM](https://github.com/gradslam/gradslam)
 
 Prerequisite: install [ROS](https://www.ros.org/)
 
@@ -28,3 +27,28 @@ Construct a map from RGBD images input:
 ```
 roslaunch gradslam_ros bag_inference.launch odom:=gt
 ```
+
+## Mapping evaluation
+
+Ground truth map from the simulator could be represented as a mesh file.
+
+Download
+[meshes](https://drive.google.com/drive/folders/1eB8sJmN4EknR7cjrke248aRFPaif8srg?usp=sharing)
+of some cave worlds.
+And place them in `./data/meshes/` folder.
+
+Compare map to mesh [./notebooks/compare_gt_map_mesh_to_point_cloud.ipynb](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/notebooks/compare_gt_map_mesh_to_point_cloud.ipynb)
+
+Prerequisite: install [Pytorch3d](https://github.com/facebookresearch/pytorch3d)
+
+Please, follow the
+[instructions](https://github.com/facebookresearch/pytorch3d/blob/master/INSTALL.md)
+to install its dependencies.
+
+It will compare a point cloud to a mesh using the following functions:
+- the closest distance from
+[point to mesh edge](https://pytorch3d.readthedocs.io/en/latest/modules/loss.html#pytorch3d.loss.point_mesh_edge_distance)
+(averaged across all points in point cloud),
+- the closes distance from
+[point to mesh face](https://pytorch3d.readthedocs.io/en/latest/modules/loss.html#pytorch3d.loss.point_mesh_face_distance)
+(averaged across all points in point cloud).
