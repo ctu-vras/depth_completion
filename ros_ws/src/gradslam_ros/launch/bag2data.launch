@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<launch>
+    <arg name="rviz" default="false"/>
+    <arg name="from_bag" default="true"/>
+    <arg name="save_data" default="true"/>
+
+    <group if="$(arg from_bag)">
+        <param name="use_sim_time" value="true"/>
+        <include file="$(dirname)/play_bag.launch"/>
+    </group>
+
+    <!-- Save data -->
+    <node name="save_dataset" pkg="gradslam_ros" type="bag2icl.py" output="screen">
+        <param name="save_data" value="$(arg save_data)"/>
+    </node>
+
+    <!-- RVIZ -->
+    <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"
+          args="-d $(find gradslam_ros)/rviz/config.rviz"/>
+</launch>
