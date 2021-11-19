@@ -1,5 +1,0 @@
-gradslam_ros
-/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/gradslam_ros/cmake.lock /home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/./cmake.lock
-/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/gradslam_ros/share/gradslam_ros/cmake/gradslam_rosConfig-version.cmake /home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/share/gradslam_ros/cmake/gradslam_rosConfig-version.cmake
-/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/gradslam_ros/share/gradslam_ros/cmake/gradslam_rosConfig.cmake /home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/share/gradslam_ros/cmake/gradslam_rosConfig.cmake
-/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/gradslam_ros/lib/pkgconfig/gradslam_ros.pc /home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/lib/pkgconfig/gradslam_ros.pc

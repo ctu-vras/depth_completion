@@ -137,4 +137,4 @@ data
 # ROS build
 ros_ws/devel/
 ros_ws/logs/
-.catkin_tools/
+ros_ws/.catkin_tools/

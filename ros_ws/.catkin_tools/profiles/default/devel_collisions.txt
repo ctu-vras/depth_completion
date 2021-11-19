@@ -1,1 +1,0 @@
-/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/./cmake.lock 1

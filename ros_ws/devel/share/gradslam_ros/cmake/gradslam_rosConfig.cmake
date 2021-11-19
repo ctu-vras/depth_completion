@@ -1,1 +1,0 @@
-/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/gradslam_ros/share/gradslam_ros/cmake/gradslam_rosConfig.cmake

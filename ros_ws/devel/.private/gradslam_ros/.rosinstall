@@ -1,2 +1,0 @@
-- setup-file:
-    local-name: /home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/gradslam_ros/setup.sh
