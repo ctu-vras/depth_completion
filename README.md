@@ -1,7 +1,10 @@
 # Supervised Depth Correction
 
-[![mapping_gradslam](demo.png)](https://drive.google.com/file/d/1Dq5OAXP0lUvGvO_78CFOkJMAs1wdt622/view?usp=sharing)
+[![mapping_gradslam](imgs/demo.png)](https://drive.google.com/file/d/1Dq5OAXP0lUvGvO_78CFOkJMAs1wdt622/view?usp=sharing)
 
+Please, follow the installation instruction in
+[docs/install.md](https://github.com/RuslanAgishev/supervised_depth_correction/docs/install.md)
+before proceeding next.
 
 ## Data sample from Subt simulator
 
