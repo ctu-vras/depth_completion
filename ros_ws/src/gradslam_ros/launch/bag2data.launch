@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <launch>
+    <arg name="bag" default="$(find gradslam_ros)/data/explorer_x1_rgbd_traj.bag"/>
     <arg name="rviz" default="false"/>
     <arg name="from_bag" default="true"/>
     <arg name="save_data" default="true"/>
 
     <group if="$(arg from_bag)">
         <param name="use_sim_time" value="true"/>
-        <include file="$(dirname)/play_bag.launch"/>
+        <include file="$(dirname)/play_bag.launch">
+            <arg name="bag" value="$(arg bag)"/>
+        </include>
     </group>
 
     <!-- Save data -->
