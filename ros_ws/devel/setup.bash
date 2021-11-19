@@ -1,1 +1,1 @@
-/home/ruslan/subt/supervised_depth_correction/ros_ws/devel/.private/catkin_tools_prebuild/setup.bash
+/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/devel/.private/catkin_tools_prebuild/setup.bash

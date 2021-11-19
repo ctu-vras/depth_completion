@@ -1,4 +1,4 @@
-#!/home/ruslan/miniconda3/envs/depth_correction/bin/python3
+#!/home/ruslan/miniconda3/envs/dl/bin/python3
 # -*- coding: utf-8 -*-
 
 # Software License Agreement (BSD License)
@@ -268,7 +268,7 @@ if __name__ == '__main__':
 
         if not args.local:
             # environment at generation time
-            CMAKE_PREFIX_PATH = r'/home/ruslan/subt/thirdparty/active_slam/gradslam/ros_ws/devel;/opt/ros/noetic'.split(';')
+            CMAKE_PREFIX_PATH = r'/home/ruslan/subt/trajopt_ws/devel;/home/ruslan/subt/thirdparty/gbplanner2_ws/devel;/opt/ros/noetic'.split(';')
         else:
             # don't consider any other prefix path than this one
             CMAKE_PREFIX_PATH = []

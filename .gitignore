@@ -133,3 +133,8 @@ dmypy.json
 
 # Big files
 data
+
+# ROS build
+ros_ws/devel/
+ros_ws/logs/
+.catkin_tools/

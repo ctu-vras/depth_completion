@@ -9,6 +9,7 @@
     <arg name="opt" default="false"/>
     <arg unless="$(arg opt)" name="inference_node" default="step_inference.py"/>
     <arg if="$(arg opt)" name="inference_node" default="step_inference_opt.py"/>
+    <arg name="pub_gt" default="false"/>
 
     <group if="$(arg from_bag)">
         <param name="use_sim_time" value="true"/>
@@ -19,6 +20,8 @@
     <node name="gradslam_ros" pkg="gradslam_ros" type="$(arg inference_node)" output="screen">
         <param name="odometry" value="$(arg odom)"/>
     </node>
+
+    <node if="$(arg pub_gt)" name="gt_world_publisher" pkg="gradslam_ros" type="gt_world_pub.py" output="screen"/>
 
     <!-- RVIZ -->
     <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"

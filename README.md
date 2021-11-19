@@ -1,3 +1,8 @@
+# Supervised Depth Correction
+
+[![mapping_gradslam](demo.png)](https://drive.google.com/file/d/1Dq5OAXP0lUvGvO_78CFOkJMAs1wdt622/view?usp=sharing)
+
+
 ## Data sample from Subt simulator
 
 Download [RGB-D images](https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vtszih9-CQowisk0VD?usp=sharing)
@@ -28,7 +33,15 @@ Construct a map from RGBD images input:
 roslaunch gradslam_ros bag_inference.launch odom:=gt
 ```
 
+You may also want to visualize a ground truth mesh of the world by pacing the argument:
+```pub_gt:=true```.
+Note, that this option requires
+[Pytorch3d](https://github.com/facebookresearch/pytorch3d)
+installed.
+
 ## Mapping evaluation
+
+***Prerequisite***: install [Pytorch3d](https://github.com/facebookresearch/pytorch3d)
 
 Ground truth map from the simulator could be represented as a mesh file.
 
@@ -38,8 +51,6 @@ of some cave worlds.
 And place them in `./data/meshes/` folder.
 
 Compare map to mesh [./notebooks/compare_gt_map_mesh_to_point_cloud.ipynb](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/notebooks/compare_gt_map_mesh_to_point_cloud.ipynb)
-
-Prerequisite: install [Pytorch3d](https://github.com/facebookresearch/pytorch3d)
 
 Please, follow the
 [instructions](https://github.com/facebookresearch/pytorch3d/blob/master/INSTALL.md)
