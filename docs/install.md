@@ -7,7 +7,7 @@
    git clone https://github.com/RuslanAgishev/supervised_depth_correction.git
    cd supervised_depth_correction
    conda activate my_env
-   conda env export > environment.yml
+   conda env update -n my_env --file environment.yaml
    ```
 4. (optional) Build the ROS wrapper for the package:
    ```bash
