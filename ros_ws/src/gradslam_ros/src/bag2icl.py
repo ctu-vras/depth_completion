@@ -2,7 +2,6 @@
 
 import numpy as np
 import cv2
-import torch
 import os
 from time import time
 from scipy import interpolate
@@ -60,7 +59,7 @@ class Processor:
         self.tf_sub = tf2_ros.TransformListener(self.tf)
         self.world_frame = 'subt'
         self.camera_frame = 'X1_ground_truth'  # 'X1/base_link/front_realsense_optical'
-        self.folder_name = 'explorer_x1_rgbd_traj/living_room_traj1_frei_png'
+        self.folder_name = 'explorer_x1_rgbd_traj_{0}/living_room_traj1_frei_png'.format(time())
         self.rgb_path = os.path.join(rospkg.RosPack().get_path('gradslam_ros'),
                                      f'data/{self.folder_name}/rgb/')
         self.depth_path = os.path.join(rospkg.RosPack().get_path('gradslam_ros'),
