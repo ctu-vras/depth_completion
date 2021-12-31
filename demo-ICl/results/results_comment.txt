@@ -1,0 +1,15 @@
+Single transformation, adamW, 50 episodes
+	loss went from 16.145233154296875 to 15.562768936157227
+	mse  went from 5937.9806983715025 to 5747.499925520591
+	low decay is caused probably by having just two tunable parametrers, not enough training data and
+	using only depth data, not normals
+	
+	
+Net with 3 convolutional layers, batchnorm and leaky ReLU, adamW, 50 episodes
+	loss went from 3.126392364501953 to 2.6921067237854004
+	mse  went from 4924.970167635045 to 4588.370632495951
+	Second training yielded worse result, visible on graphs
+	Clearly superior to previous model but still not very impressive, more training data and perhaps more
+	layers would improve model efficiency
+	This model also moves values outside of [0, 1] interval, therefore images are no longer valid, this could be 
+	fixed by saturation however I am not sure if saturation wont hurt the process
