@@ -5,21 +5,44 @@ import glob
 from DepthCorrectionModule import LinTransModel, ModelV1
 from gradslam.datasets import ICL
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 
 
 def denoise_image(img_n, model, weights_path):
     """
-    Loads weights into model, runs image through model and saves result
+    Loads weights into model, runs image through model and plots result
     """
     model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
     model = model.eval()
     img = model(img_n)
-    img = torch.squeeze(img, 0)
-    img = torch.squeeze(img, 0)
     print(img.shape)
     img = img.cpu().detach().numpy()
-    img = np.repeat(img, 3, axis=2)*255
+    img_n = img_n.cpu().detach().numpy()
+
+    plt.figure(figsize=(18, 6))
+    plt.subplot(1, 2, 1)
+    plt.title('Depth with noise')
+    plt.imshow(img_n[0, 0, :, :, 0], cmap='gray')
+    plt.subplot(1, 2, 2)
+    plt.title('Depth after forward pass')
+    plt.imshow(img[0, 0, :, :, 0], cmap='gray')
+    plt.show()
+
+
+def save_image_torch(img):
+    """
+    Save depth image from
+    :param img_torch: <torch.tensor> of shape (B, S, H, W, CH)
+    """
+    img = torch.squeeze(img, 0)
+    img = torch.squeeze(img, 0)
     print(img.shape)
+    print("Torch image:")
+    print(img)
+    img = img.cpu().detach().numpy()
+    img = np.repeat(img, 3, axis=2) * 255
+    print("Shape of np image:", img.shape)
+    print("np image:")
     print(img)
     cv2.imwrite("denoised.png", img)
 
@@ -62,12 +85,9 @@ if __name__ == '__main__':
     noise_data(path, path_noise)"""
 
     img_n_path = "/home/jachym/MEGAsync/KYR/Bakalarka/ICL-noise/living_room_traj2_frei_png/depth/0.png"
-    #weights_path = "/home/jachym/MEGAsync/KYR/Bakalarka/src/results/3kernelNet/weights50.pth"
-    weights_path = "/home/jachym/MEGAsync/KYR/Bakalarka/src/results/LinearTransformation/weights40.pth"
+    weights_path = "/home/jachym/MEGAsync/KYR/Bakalarka/src/results/3kernelNet/weights50.pth"
+    #weights_path = "/home/jachym/MEGAsync/KYR/Bakalarka/src/results/LinearTransformation/weights40.pth"
     path_noisy_data = "/home/jachym/MEGAsync/KYR/Bakalarka/ICL-noise/"
-    i = cv2.imread(img_n_path)
-    print(i.shape)
-    print(i)
 
     dataset_noise = ICL(path_noisy_data, seqlen=1)
     loader_n = iter(DataLoader(dataset=dataset_noise, batch_size=1))
@@ -75,7 +95,7 @@ if __name__ == '__main__':
     depths_n = torch.squeeze(depths_n[..., 0, :], -4)
     depths_n = torch.unsqueeze(depths_n, 0)
     print(depths_n.shape)
-    #model = ModelV1()
-    model = LinTransModel()
+    model = ModelV1()
+    #model = LinTransModel()
     denoise_image(depths_n, model, weights_path)
-
+    #save_image_torch(depths_n)
