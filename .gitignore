@@ -132,9 +132,6 @@ dmypy.json
 .idea/
 
 # Big files
-data
-
-# ROS build
-ros_ws/devel/
-ros_ws/logs/
-ros_ws/.catkin_tools/
+data/
+*.simg
+*.img
