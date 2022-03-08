@@ -13,7 +13,7 @@ Download [RGB-D images](https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vt
 
 And place it to the folder:
 ```
-./ros_ws/src/gradslam_ros/data/
+./data/
 ```
 
 Explore the depth images data from the simulator (requires
@@ -26,16 +26,9 @@ installation):
 
 ***Prerequisite***: install [ROS](https://www.ros.org/)
 
-Build the `gradslam_ros` wrapper node:
-```bash
-cd ./ros_ws/
-catkin_make
-source devel/setup.bash
-```
-
 Construct a map from RGBD images input:
 ```
-roslaunch gradslam_ros bag_inference.launch odom:=gt
+roslaunch gradslam_ros demo.launch odom:=gt
 ```
 
 You may also want to visualize a ground truth mesh of the world by pacing the argument:
@@ -54,7 +47,7 @@ Ground truth map from the simulator could be represented as a mesh file.
 Download
 [meshes](https://drive.google.com/drive/folders/1eB8sJmN4EknR7cjrke248aRFPaif8srg?usp=sharing)
 of some cave worlds.
-And place them to `./ros_ws/src/gradslam_ros/data/meshes/` folder.
+And place them to `./data/meshes/` folder.
 
 Compare map to mesh
 [./notebooks/compare_gt_map_mesh_to_point_cloud.ipynb](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/notebooks/compare_gt_map_mesh_to_point_cloud.ipynb)
@@ -80,7 +73,7 @@ dataset format.
 
 In order to record a bag-file, launch the simulator and simply run:
 ```bash
-./ros_ws/src/gradslam_ros/scripts/record_bag.sh
+./scripts/record_bag.sh
 ```
 
 You can download prerecorded data from
