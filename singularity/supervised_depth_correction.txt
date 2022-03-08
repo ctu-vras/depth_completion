@@ -49,10 +49,11 @@ From: ros:noetic-perception
     # Pytorch3d
     pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
     # GradSLAM
+    rm -rf /tmp/chamferdist /tmp/gradslam/
     cd /tmp/ && git clone https://github.com/krrish94/chamferdist.git
     cd /tmp/chamferdist && pip install .
     cd /tmp/ && git clone https://github.com/gradslam/gradslam.git
-    cd /tmp/gradslam && pip install -e .[dev]
+    cd /tmp/gradslam && pip install -e .
     ln -s /usr/bin/python3 /usr/bin/python
 
     # Build ROS workspace
@@ -65,3 +66,9 @@ From: ros:noetic-perception
     catkin init
     catkin config --extend /opt/ros/noetic
     catkin build -c -j $njobs
+
+%runscript
+    echo "Running demo example on bag file"
+    /bin/bash -c "source /opt/ros/noetic/setup.bash && \
+                  source /opt/ros/depthcorr_ws/devel/setup.bash --extend && \
+                  roslaunch supervised_depth_correction demo.launch rviz:=0"
