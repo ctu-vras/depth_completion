@@ -25,6 +25,9 @@
 1. Install [Singularity](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/docs/singularity.md).
 
 2. Building Singularity image.
+   
+   One option could be to use the prebuilt singularity image.
+   Download it from [here](https://drive.google.com/drive/folders/1h2NVxCMva06nUKfHKthEJ5KkHotILvQY?usp=sharing).
 
    If you would like to build a singularity image yourself,
    please do the following:
