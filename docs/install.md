@@ -4,14 +4,16 @@
 2. Install [miniconda](https://docs.conda.io/en/latest/miniconda.html)
 3. Setup python environment:
    ```bash
+   mkdir -p ~/catkin_ws/src/
+   cd ~/catkin_ws/src/
    git clone https://github.com/RuslanAgishev/supervised_depth_correction.git
    cd supervised_depth_correction
    conda activate my_env
    conda env update -n my_env --file environment.yaml
    ```
-4. (optional) Build the ROS wrapper for the package:
+4. Build the ROS package:
    ```bash
-   cd ./ros_ws/
-   catkin build gradslam_ros
+   cd ~/catkin_ws/
+   catkin build supervised_depth_correction
    source devel/setup.bash
    ```
