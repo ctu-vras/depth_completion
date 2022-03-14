@@ -69,7 +69,7 @@ class GradslamROS:
         self.robot_frame = 'X1_ground_truth'
         self.camera = 'front'  # 'right', 'front'
         self.camera_frame = f'X1/base_link/{self.camera}_realsense_optical'
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = torch.device(rospy.get_param('~device', 'cuda:0'))
         self.slam = PointFusion(odom=odometry, dsratio=4, device=self.device)
         self.width, self.height = width, height
         self.pointclouds = Pointclouds(device=self.device)
