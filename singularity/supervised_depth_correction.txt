@@ -49,11 +49,7 @@ From: ros:noetic-perception
     # Pytorch3d
     pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
     # GradSLAM
-    rm -rf /tmp/chamferdist /tmp/gradslam/
-    cd /tmp/ && git clone https://github.com/krrish94/chamferdist.git
-    cd /tmp/chamferdist && pip install .
-    cd /tmp/ && git clone https://github.com/gradslam/gradslam.git
-    cd /tmp/gradslam && pip install -e .
+    pip install 'git+https://github.com/gradslam/gradslam.git'
     ln -s /usr/bin/python3 /usr/bin/python
 
     # Build ROS workspace
