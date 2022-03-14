@@ -25,6 +25,9 @@
 1. Install [Singularity](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/docs/singularity.md).
 
 2. Building Singularity image.
+   
+   One option could be to use the prebuilt singularity image.
+   Download it from [here](https://drive.google.com/drive/folders/1h2NVxCMva06nUKfHKthEJ5KkHotILvQY?usp=sharing).
 
    If you would like to build a singularity image yourself,
    please do the following:
@@ -42,9 +45,9 @@
    The next step is to launch the demo on the provided bag file.
 
    ```bash
-   singularity shell --nv --bind /full/path/to/supervised_depth_correction/:/opt/ros/depthcorr_ws/src/supervised_depth_correction/ shell supervised_depth_correction.simg
+   singularity shell --nv --bind /full/path/to/supervised_depth_correction/data/:/opt/ros/depthcorr_ws/src/supervised_depth_correction/data/ supervised_depth_correction.simg
 
-   source /opt/ros/noetic/setip.bash
+   source /opt/ros/noetic/setup.bash
    source /opt/ros/depthcorr_ws/devel/setup.bash
 
    roslaunch supervised_depth_correction demo.launch rviz:=True
