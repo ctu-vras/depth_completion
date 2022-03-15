@@ -35,6 +35,7 @@ P.S.: For the taylor machine the `ROS_IP` should be printed as `147.32.84.27`.
 ```bash
 cd ~/catkin_ws/src/supervised_depth_correction/singularity/
 
+module load Singularity
 singularity shell --nv --bind /home.stud/username/catkin_ws/src/supervised_depth_correction/:/opt/ros/depthcorr_ws/src/supervised_depth_correction/ supervised_depth_correction.simg
 
 source /opt/ros/noetic/setup.bash
