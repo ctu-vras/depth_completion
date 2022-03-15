@@ -73,7 +73,7 @@ class GTWorldPub:
         pub.publish(pc_msg)
 
     def load_ground_truth(self, world_name):
-        path_to_mesh_file = os.path.join(rospkg.RosPack().get_path('rpz_planning'), f"data/meshes/{world_name}.obj")
+        path_to_mesh_file = os.path.join(rospkg.RosPack().get_path('supervised_depth_correction'), f"data/meshes/{world_name}.obj")
         assert os.path.exists(path_to_mesh_file)
         t0 = timer()
         rospy.loginfo('Loading ground truth mesh ...')
@@ -134,7 +134,7 @@ class GTWorldPub:
         marker.color.g = 0.5
         marker.color.b = 0.6
         marker.type = Marker.MESH_RESOURCE
-        marker.mesh_resource = f"package://rpz_planning/data/meshes/{world_name}.dae"
+        marker.mesh_resource = f"package://supervised_depth_correction/data/meshes/{world_name}.dae"
         self.map_gt_mesh_marker = marker
 
     def run(self):
