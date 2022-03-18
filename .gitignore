@@ -132,6 +132,8 @@ dmypy.json
 .idea/
 
 # Big files
-data/
+data/explorer*
+*.bag
+data/meshes
 *.simg
 *.img
