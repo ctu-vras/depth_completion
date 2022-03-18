@@ -113,6 +113,7 @@ class KITTIRawPoses(object):
 
 
 class KITTIDepth:
+    # TODO: add rgb-d data from KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     def __init__(self):
         self.ts = None
         self.depths = None
@@ -131,6 +132,7 @@ class KITTIDepth:
 
 
 class Dataset:
+    # TODO: merge corresponnding rgb-d (from KITTI Depth) and poses (from KITTI Raw), construct global map
     def __init__(self, seq, subseq):
         self.poses_raw = KITTIRawPoses(seq, subseq).poses
         self.depths = KITTIDepth().depths
@@ -148,30 +150,39 @@ class Dataset:
 def poses_demo():
     # np.random.seed(135)
     seq = np.random.choice(sequence_names)
-    subseq = np.random.choice(glob.glob(os.path.join(data_dir, seq, '2011_*')))
+    while True:
+        subseq = np.random.choice(os.listdir(os.path.join(data_dir, seq)))
+        if '2011_' in subseq:
+            break
     ds = KITTIRawPoses(seq=seq, subseq=subseq)
 
     xs, ys, zs = ds.poses[:, 0, 3], ds.poses[:, 1, 3], ds.poses[:, 2, 3]
 
-    plt.figure(figsize=(16, 8))
-    plt.subplot(1, 2, 1)
-    plt.title('X, Y [m]')
+    plt.figure()
+    plt.title("%s/%s" % (seq, subseq))
+    # plt.subplot(1, 2, 1)
     plt.plot(xs, ys, '.')
     plt.grid()
+    plt.xlabel('X [m]')
+    plt.ylabel('Y [m]')
     plt.axis('equal')
 
-    plt.subplot(1, 2, 2)
-    plt.title('Z [m]')
-    plt.plot(ds.ts, zs, '.')
-    plt.grid()
-    plt.axis('equal')
+    # plt.subplot(1, 2, 2)
+    # plt.xlabel('time [sec]')
+    # plt.ylabel('Z [m]')
+    # plt.plot(ds.ts, zs, '.')
+    # plt.grid()
+    # plt.axis('equal')
     plt.show()
 
 
 def ts_demo():
     # np.random.seed(135)
     seq = np.random.choice(sequence_names)
-    subseq = np.random.choice(glob.glob(os.path.join(data_dir, seq, '2011_*')))
+    while True:
+        subseq = np.random.choice(os.listdir(os.path.join(data_dir, seq)))
+        if '2011_' in subseq:
+            break
     ds = KITTIRawPoses(seq=seq, subseq=subseq)
 
     ts_gps = ds.get_timestamps(sensor='gps', zero_origin=True)
@@ -185,7 +196,11 @@ def ts_demo():
     plt.show()
 
 
-if __name__ == '__main__':
-    for _ in range(5):
+def main():
+    for _ in range(3):
         poses_demo()
-    # ts_demo()
+    ts_demo()
+
+
+if __name__ == '__main__':
+    main()
