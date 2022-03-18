@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(supervised_depth_correction)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++14)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -16,7 +15,7 @@ find_package(catkin REQUIRED)
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-# catkin_python_setup()
+catkin_python_setup()
 
 ################################################
 ## Declare ROS messages, services and actions ##
@@ -187,6 +186,11 @@ include_directories(
 #   # myfile2
 #   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 # )
+install(DIRECTORY
+    launch/
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+)
+
 
 #############
 ## Testing ##
