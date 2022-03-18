@@ -8,6 +8,7 @@ from scipy import integrate
 from scipy.spatial.transform import Rotation
 from scipy.spatial.transform import Slerp
 from tqdm import tqdm
+import datetime
 
 
 # TODO: use os and file path instead
@@ -22,46 +23,15 @@ sequence_names = [
 ]
 
 
-def skew_sim(a):
-    A = np.array([[0, -a[2], a[1]],
-                  [a[2], 0, -a[0]],
-                  [-a[1], a[0], 0]])
-    return A
-
-
-def angle_axis_to_R(theta, a):
-    R = np.cos(theta)*np.eye(3) + (1 - np.cos(theta))*np.matmul(a.reshape([3, 1]), a.reshape([1, 3])) +\
-        np.sin(theta)*skew_sim(a)
-    return R
-
-
-class KITTIRaw(object):
+class KITTIRawPoses(object):
 
     def __init__(self, seq, subseq, path=None):
         if path is None:
             path = os.path.join(data_dir, seq, subseq)
-        self.name = os.path.join(seq, subseq)
         self.path = path
-
-    @staticmethod
-    def get_gps_lidar_transform():
-        pass
-
-    def local_cloud(self, id):
-        pass
-
-    def visualize_cloud(self, input):
-        import open3d as o3d
-        if isinstance(input, int):
-            id = input
-            cloud = self.local_cloud(id)[:, :3]
-        elif isinstance(input, np.ndarray):
-            cloud = input[:, :3]
-        else:
-            raise ValueError('Support np.array ot int index values')
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(cloud)
-        o3d.visualization.draw_geometries([pcd])
+        self.poses = self.get_poses()
+        self.ts = self.get_timestamps(sensor='gps')
+        self.ids = range(len(self.ts))
 
     @staticmethod
     def gps_to_ecef(lat, lon, alt, zero_origin=False):
@@ -85,8 +55,9 @@ class KITTIRaw(object):
             x, y, z = x - x[0], y - y[0], z - z[0]
         return x, y, z
 
-    def get_gps_pose(self, id):
-        gps_data = np.genfromtxt(os.path.join(self.path, 'oxts/data/', '%010d.txt' % id))
+    def get_gps_pose(self, fname):
+        assert isinstance(fname, str)
+        gps_data = np.genfromtxt(fname)
         lat, lon, alt = gps_data[:3]
         roll, pitch, yaw = gps_data[3:6]
         R = Rotation.from_euler('xyz', [roll, pitch, yaw], degrees=False).as_matrix()
@@ -97,87 +68,90 @@ class KITTIRaw(object):
         pose[:3, 3] = np.array([x, y, z])
         return pose
 
-    def get_cloud_poses(self):
-        pass
-
-    def cloud_pose(self, id):
-        return self.poses[id]
+    def get_poses(self, zero_origin=False):
+        poses = []
+        for fname in np.sort(glob.glob(os.path.join(self.path, 'oxts/data/*.txt'))):
+            pose = self.get_gps_pose(fname)
+            poses.append(pose)
+        poses = np.asarray(poses)
+        if zero_origin:
+            pose0 = poses[0]
+            # poses[:, :3, 3] -= pose0[:3, 3]
+            poses = np.matmul(np.linalg.inv(pose0)[None], poses)
+        return poses
 
     def get_timestamps(self, sensor, zero_origin=False):
         assert isinstance(sensor, str)
-        assert sensor == 'imu' or sensor == 'gps-latlong'
+        assert sensor == 'gps' or sensor == 'lidar'
+        if sensor == 'gps':
+            folder = 'oxts'
+        elif sensor == 'lidar':
+            folder = 'velodyne_points'
+        else:
+            raise ValueError
         timestamps = []
-        not_strictly_increasing_idxs = []
-        j = 0
-        for i in self.parts_range:
-            part = 'Part%d' % i
-            files = np.genfromtxt(os.path.join(self.path, part, '%s.txt' % sensor), dtype=str)[:, 0].tolist()
-            for t in files:
-                t = np.asarray(t.split("_"), dtype=np.float)
-                timestamp = t[3] * 3600 + t[4] * 60 + t[5] + t[6] / 1000.
-                timestamps.append(timestamp)
-                # timestamps should be in increasing order for poses SLERP, that is why we keep non strictly
-                # increasing indexes
-                if j > 1:
-                    if timestamps[j] - timestamps[j-1] <= 0:
-                        not_strictly_increasing_idxs.append(j)
-                j += 1
-
-        timestamps = np.sort(np.asarray(timestamps))
+        ts = np.genfromtxt(os.path.join(self.path, folder, 'timestamps.txt'), dtype=str)
+        for t in ts:
+            date = t[0]
+            day_time, sec = t[1].split(".")
+            sec = float('0.' + sec)
+            stamp = datetime.datetime.strptime("%s_%s" % (date, day_time), "%Y-%m-%d_%H:%M:%S").timestamp() + sec
+            timestamps.append(stamp)
         if zero_origin:
-            timestamps = timestamps - timestamps[0]
-        return timestamps, not_strictly_increasing_idxs
-
-    def get_global_cloud(self, pts_step=1, poses_step=10):
-        clouds = []
-        for id in tqdm(range(0, len(self), poses_step)):
-            cloud = self.local_cloud(id)[:, :3]
-            pose = self.cloud_pose(id)
-            cloud = np.matmul(cloud, pose[:3, :3]) + pose[:3, 3:].reshape([1, 3])
-            clouds.append(cloud)
-            # print('%i points read from dataset %s, cloud %i.' % (cloud.shape[0], ds.name, id))
-        cloud = np.concatenate(clouds)[::pts_step, :]
-        return cloud
+            timestamps = [t - timestamps[0] for t in timestamps]
+        return timestamps
 
     def __len__(self):
         return len(self.ids)
 
-    def __getitem__(self, item):
-        if isinstance(item, int):
-            id = self.ids[item]
-            return self.local_cloud(id), self.cloud_pose(id)
-
-        ds = KITTIRaw()
-        ds.name = self.name
-        ds.path = self.path
-        ds.poses = self.poses
-        if isinstance(item, (list, tuple)):
-            ds.ids = [self.ids[i] for i in item]
-        else:
-            assert isinstance(item, slice)
-            ds.ids = self.ids[item]
-        return ds
+    def __getitem__(self, i):
+        return self.ts[i], self.poses[i]
 
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
 
 
-def demo():
-    seq = sequence_names[0]
+class KITTIDepth:
+    def __init__(self):
+        self.ts = None
+        self.depths = None
+
+    def get_rgbd(self):
+        pass
+
+    def get_timestamps(self):
+        pass
+
+    def __len__(self):
+        pass
+
+    def __getitem__(self, item):
+        pass
+
+
+class Dataset:
+    def __init__(self, seq, subseq):
+        self.poses_raw = KITTIRawPoses(seq, subseq).poses
+        self.depths = KITTIDepth().depths
+
+    def get_timestamps(self):
+        pass
+
+    def __len__(self):
+        pass
+
+    def __getitem__(self, item):
+        pass
+
+
+def poses_demo():
+    # np.random.seed(135)
+    seq = np.random.choice(sequence_names)
     subseq = np.random.choice(glob.glob(os.path.join(data_dir, seq, '2011_*')))
-    ds = KITTIRaw(seq=seq, subseq=subseq)
+    ds = KITTIRawPoses(seq=seq, subseq=subseq)
 
-    poses = []
-    for i, fname in enumerate(glob.glob(os.path.join(ds.path, 'oxts/data/*.txt'))):
-        pose = ds.get_gps_pose(i)
-        poses.append(pose)
-    poses = np.asarray(poses)
-
-    assert poses.shape == (len(poses), 4, 4)
-    # zero_origin:
-    xs, ys, zs = poses[:, 0, 3], poses[:, 1, 3], poses[:, 2, 3]
-    xs, ys, zs = xs - xs[0], ys - ys[0], zs - zs[0]
+    xs, ys, zs = ds.poses[:, 0, 3], ds.poses[:, 1, 3], ds.poses[:, 2, 3]
 
     plt.figure(figsize=(16, 8))
     plt.subplot(1, 2, 1)
@@ -188,11 +162,30 @@ def demo():
 
     plt.subplot(1, 2, 2)
     plt.title('Z [m]')
-    plt.plot(zs, '.')
+    plt.plot(ds.ts, zs, '.')
     plt.grid()
-    # plt.axis('equal')
+    plt.axis('equal')
+    plt.show()
+
+
+def ts_demo():
+    # np.random.seed(135)
+    seq = np.random.choice(sequence_names)
+    subseq = np.random.choice(glob.glob(os.path.join(data_dir, seq, '2011_*')))
+    ds = KITTIRawPoses(seq=seq, subseq=subseq)
+
+    ts_gps = ds.get_timestamps(sensor='gps', zero_origin=True)
+    ts_velo = ds.get_timestamps(sensor='lidar', zero_origin=True)
+
+    plt.figure()
+    plt.plot(ts_gps[::5], '.', label='gps')
+    plt.plot(ts_velo[::5], '.', label='lidar')
+    plt.legend()
+    plt.grid()
     plt.show()
 
 
 if __name__ == '__main__':
-    demo()
+    for _ in range(5):
+        poses_demo()
+    # ts_demo()
