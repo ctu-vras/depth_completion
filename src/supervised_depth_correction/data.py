@@ -9,12 +9,18 @@ from scipy.spatial.transform import Rotation
 from scipy.spatial.transform import Slerp
 from tqdm import tqdm
 import datetime
-from PIL import Image
+import torch
+import gradslam
+from gradslam import Pointclouds, RGBDImages
+from gradslam.slam import PointFusion
+import open3d
 
 
 # TODO: use os and file path instead
-data_dir_raw = "/home/ruslan/data/datasets/kitti_raw"
-data_dir_depth = "/home/ruslan/data/datasets/kitti_depth"
+# data_dir = "/home/ruslan/data/datasets/kitti_raw"
+data_dir = "/home/jachym/KITTI/kitti_raw"
+DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 sequence_names = [
     '2011_09_26',
@@ -29,13 +35,12 @@ class KITTIRawPoses(object):
 
     def __init__(self, seq, subseq, path=None):
         if path is None:
-            path = os.path.join(data_dir_raw, seq)
+            path = os.path.join(data_dir, seq, subseq)
         self.path = path
-        self.subseq = subseq
         self.poses = self.get_poses()
         self.ts = self.get_timestamps(sensor='gps')
-        self.calibrations = self.load_calib()
         self.ids = range(len(self.ts))
+        self.stamps = self.get_stamps(subseq)
 
     @staticmethod
     def gps_to_ecef(lat, lon, alt, zero_origin=False):
@@ -74,7 +79,7 @@ class KITTIRawPoses(object):
 
     def get_poses(self, zero_origin=False):
         poses = []
-        for fname in np.sort(glob.glob(os.path.join(self.path, self.subseq, 'oxts/data/*.txt'))):
+        for fname in np.sort(glob.glob(os.path.join(self.path, 'oxts/data/*.txt'))):
             pose = self.get_gps_pose(fname)
             poses.append(pose)
         poses = np.asarray(poses)
@@ -83,6 +88,14 @@ class KITTIRawPoses(object):
             # poses[:, :3, 3] -= pose0[:3, 3]
             poses = np.matmul(np.linalg.inv(pose0)[None], poses)
         return poses
+
+    def get_stamps(self, subseq):
+        stamps = list()
+        for file in np.sort(glob.glob(os.path.join(self.path, 'oxts/data/*.txt'))):
+            file = file.replace(self.path + "/oxts/data/", "").replace(".txt", "")
+            stamp = subseq + "_" + file
+            stamps.append(stamp)
+        return stamps
 
     def get_timestamps(self, sensor, zero_origin=False):
         assert isinstance(sensor, str)
@@ -94,7 +107,7 @@ class KITTIRawPoses(object):
         else:
             raise ValueError
         timestamps = []
-        ts = np.genfromtxt(os.path.join(self.path, self.subseq, folder, 'timestamps.txt'), dtype=str)
+        ts = np.genfromtxt(os.path.join(self.path, folder, 'timestamps.txt'), dtype=str)
         for t in ts:
             date = t[0]
             day_time, sec = t[1].split(".")
@@ -104,42 +117,6 @@ class KITTIRawPoses(object):
         if zero_origin:
             timestamps = [t - timestamps[0] for t in timestamps]
         return timestamps
-
-    def load_calib(self):
-        """
-        load calib poses and times.
-        """
-        calib = self.parse_calibration(os.path.join(self.path, "calib_cam_to_cam.txt"))
-        return calib
-
-    @staticmethod
-    def parse_calibration(filename):
-        """ read calibration file with given filename
-
-            Returns
-            -------
-            dict
-                Calibration matrices as 4x4 numpy arrays.
-        """
-        calib = {}
-        calib_file = open(filename)
-        for line in calib_file:
-            # load intrinsics
-            if 'K_' in line:
-                key, content = line.split(':')
-                values = [float(v) for v in content.strip().split()]
-
-                K = np.zeros((3, 3))
-                K[0, 0:3] = values[0:3]
-                K[1, 0:3] = values[3:6]
-                K[2, 0:3] = values[6:9]
-
-                calib[key] = K
-        calib_file.close()
-        return calib
-
-    def get_intrins(self):
-        pass
 
     def __len__(self):
         return len(self.ids)
@@ -153,50 +130,69 @@ class KITTIRawPoses(object):
 
 
 class KITTIDepth:
-    # TODO: add rgb-d data from KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
-    def __init__(self, seq, mode='val', path=None):
-        assert mode == 'train' or mode == 'val'
-        if path is None:
-            path = os.path.join(data_dir_depth, mode, seq)
+
+    """
+    loads depth images, rgb images and intrinsics from
+    KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
+    """
+
+    def __init__(self, path):
+        # path directory should contain folders: depth, rgb, intrinsics
         self.path = path
-        self.ts = None
-        self.depths = None
-        self.name = seq
+        self.stamps = self.get_stamps()
+        self.depths = self.get_depths()
+        self.intrinsics = self.get_intrinsics()
+        self.rgbs = self.get_rgbs()
 
-    @staticmethod
-    def read_depth(filename):
-        """
-        Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
-        which can be opened with either MATLAB, libpng++ or the latest version of
-        Python's pillow (from PIL import Image). A 0 value indicates an invalid pixel
-        (ie, no ground truth exists, or the estimation algorithm didn't produce an
-        estimate for that pixel). Otherwise, the depth for a pixel can be computed
-        in meters by converting the uint16 value to float and dividing it by 256.0:
+    def get_rgbs(self):
+        rgbs = list()
+        rgb_dir = os.path.join(self.path, "rgb")
+        for file in sorted(glob.glob(rgb_dir + "/*.png")):
+            rgb = torch.tensor(cv2.imread(file, cv2.IMREAD_UNCHANGED))
+            # transform file into gradslam format (B, S, H, W, CH), for now we will use B=1, S=1
+            # TODO: change this to allow custom minibatch size
+            rgb = torch.unsqueeze(torch.unsqueeze(rgb, 0), 0)
+            rgbs.append(rgb)
+        return rgbs
 
-        disp(u,v)  = ((float)I(u,v))/256.0;
-        valid(u,v) = I(u,v)>0;
-        Args:
-            filename: str, full path to depth image
+    def get_depths(self):
+        depths = list()
+        depth_dir = os.path.join(self.path, "depth")
+        for file in sorted(glob.glob(depth_dir + "/*.png")):
+            # TODO: see if there are any better ways to store values, e.g. preprocessing like in DEPTH completion demo
+            depth = torch.tensor(cv2.imread(file, cv2.IMREAD_UNCHANGED).astype('int32'))
+            # transform file into gradslam format (B, S, H, W, CH), for now we will use B=1, S=1
+            depth = torch.unsqueeze(torch.unsqueeze(torch.unsqueeze(depth, -1), 0), 0)
+            depths.append(depth)
+        return depths
 
-        Returns:
-            depth: np.array, depth image
-        """
-        depth_png = np.array(Image.open(filename), dtype=int)
-        # make sure we have a proper 16bit depth map here.. not 8bit!
-        assert (np.max(depth_png) > 255)
-        depth = depth_png.astype(np.float) / 256.
-        depth[depth_png == 0] = -1.
-        return depth
+    def get_intrinsics(self):
+        intrinsics = list()
+        intr_dir = os.path.join(self.path, "intrinsics")
+        for file in sorted(glob.glob(intr_dir + "/*.txt")):
+            intrinsics_i = torch.tensor(np.loadtxt(file), dtype=torch.double)
+            # reshape intrinsics into a 4x4 matrix
+            intrinsics_i = torch.reshape(intrinsics_i, (3, 3))
+            intrinsics_i = torch.cat((intrinsics_i, torch.zeros(3, 1)), 1)
+            intrinsics_i = torch.cat((intrinsics_i, torch.zeros(1, 4)), 0)
+            intrinsics_i[3, 3] = 1.
+            intrinsics_i = torch.unsqueeze(torch.unsqueeze(intrinsics_i, 0), 0)
+            intrinsics.append(intrinsics_i)
+        return intrinsics
 
-    def get_depth_map(self, id, gt=False, cam='left'):
-        depth_folder = 'groundtruth' if gt else 'velodyne_raw'
-        camera_n = 2 if cam == 'left' else 3
-        fpath = os.path.join(self.path, 'proj_depth', depth_folder, 'image_%02d/%010d.png' % (camera_n, id))
-        depth_map = self.read_depth(fpath)
-        return depth_map
-
-    def get_timestamps(self):
-        pass
+    def get_stamps(self):
+        # identifiers of the pictures and corresponding data
+        # identifier is in format: SEQ_SUBSEQ_IMAGENUMBER
+        # e.g. 2011_09_26_drive_0002_sync_0000000008
+        # 2011_09_26_drive_0002_sync_groundtruth_depth_0000000026_image_03.png = format of the depth names
+        stamps = dict()
+        depth_dir = os.path.join(self.path, "depth")
+        depth_files = sorted(glob.glob(depth_dir + "/*.png"))
+        for i in range(len(depth_files)):
+            depth_file = depth_files[i].replace(depth_dir + "/", "")
+            identifier = depth_file[0:26] + depth_file[44:55]     # slice id from depth file name
+            stamps[identifier] = i
+        return stamps
 
     def __len__(self):
         pass
@@ -206,26 +202,43 @@ class KITTIDepth:
 
 
 class Dataset:
-    # TODO: merge corresponnding rgb-d (from KITTI Depth) and poses (from KITTI Raw), construct global map
-    def __init__(self, seq, subseq):
-        self.poses_raw = KITTIRawPoses(seq, subseq).poses
-        self.depths = KITTIDepth().depths
+    def __init__(self, seq, subseq, depth_path):
+        poses_dataset = KITTIRawPoses(seq, subseq)
+        self.poses_raw = poses_dataset.poses
+        self.stamps_raw = poses_dataset.stamps
+        depth_dataset = KITTIDepth(depth_path)
+        self.depths = depth_dataset.depths
+        self.intrinsics = depth_dataset.intrinsics
+        self.rgbs = depth_dataset.rgbs
+        self.stams_depth = depth_dataset.stamps
+        self.data = self.create_correspondences()
 
-    def get_timestamps(self):
-        pass
+    def create_correspondences(self):
+        data = list()   # list of tuples (colors, depth, intrinsics, poses)
+        for stamp in self.stamps_raw:
+            if stamp in self.stams_depth:
+                i = self.stams_depth[stamp]     # index of depth data corresponding to raw data
+                # format poses for gradslam
+                poses = torch.tensor(self.poses_raw[self.stamps_raw.index(stamp)])
+                poses = torch.unsqueeze(torch.unsqueeze(poses, 0), 0)
+                d = (self.rgbs[i], self.depths[i], self.intrinsics[i], poses)
+                data.append(d)
+        return data
 
     def __len__(self):
-        pass
+        return len(self.data)
 
     def __getitem__(self, item):
-        pass
+        return self.data[item]
 
 
 def poses_demo():
     # np.random.seed(135)
-    seq = np.random.choice(sequence_names)
+    #seq = np.random.choice(sequence_names)
+    seq = "2011_09_26"
     while True:
-        subseq = np.random.choice(os.listdir(os.path.join(data_dir_raw, seq)))
+        #subseq = np.random.choice(os.listdir(os.path.join(data_dir, seq)))
+        subseq = "2011_09_26_drive_0002_sync"
         if '2011_' in subseq:
             break
     ds = KITTIRawPoses(seq=seq, subseq=subseq)
@@ -250,11 +263,12 @@ def poses_demo():
     plt.show()
 
 
-def gps_velo_times_demo():
+def ts_demo():
     # np.random.seed(135)
-    seq = np.random.choice(sequence_names)
+    # seq = np.random.choice(sequence_names)
+    seq = "2011_09_26"
     while True:
-        subseq = np.random.choice(os.listdir(os.path.join(data_dir_raw, seq)))
+        subseq = np.random.choice(os.listdir(os.path.join(data_dir, seq)))
         if '2011_' in subseq:
             break
     ds = KITTIRawPoses(seq=seq, subseq=subseq)
@@ -270,17 +284,44 @@ def gps_velo_times_demo():
     plt.show()
 
 
-def depths_demo():
-    seq = '2011_09_26_drive_0002_sync'
-    ds = KITTIDepth(seq=seq)
-    ds.get_depth_map(5)
+def gradslam_demo():
+
+    # constructs global map using gradslam, visualizes resulting pointcloud
+    seq = "2011_09_26"
+    subseq = "2011_09_26_drive_0002_sync"
+    # subseq = "2011_09_26_drive_0005_sync"
+    # subseq = "2011_09_26_drive_0023_sync"
+    print("###### Loading data ... ######")
+    dataset = Dataset(seq, subseq, DEPTH_DATA_DIR)
+    print("###### Data loaded ######")
+
+    # create global map
+    slam = PointFusion(device=DEVICE, odom="gt", dsratio=4)
+    prev_frame = None
+    pointclouds = Pointclouds(device=DEVICE)
+    for s in range(len(dataset)):
+        colors, depths, intrinsics, poses, *_ = dataset[s]
+        depths = depths.float()
+        colors = colors.float()
+        intrinsics = intrinsics.float()
+        poses = poses.float()
+        live_frame = RGBDImages(colors, depths, intrinsics, poses).to(DEVICE)
+        pointclouds, *_ = slam.step(pointclouds, live_frame, prev_frame)
+        prev_frame = live_frame
+        print(f"###### Creating map, step: {s}/{len(dataset) - 1} ######")
+
+    # visualize using open3d
+    pc = pointclouds.points_list[0]
+    pcd_gt = open3d.geometry.PointCloud()
+    pcd_gt.points = open3d.utility.Vector3dVector(pc.cpu().detach().numpy())
+    open3d.visualization.draw_geometries([pcd_gt])
 
 
 def main():
-    for _ in range(3):
-        poses_demo()
-    gps_velo_times_demo()
-    depths_demo()
+    # for _ in range(3):
+    #     poses_demo()
+    # ts_demo()
+    gradslam_demo()
 
 
 if __name__ == '__main__':
