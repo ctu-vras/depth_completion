@@ -12,10 +12,10 @@ from PIL import Image
 
 
 # TODO: use os and file path instead
-DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
-# DATA_DIR = "/home/jachym/KITTI/kitti_raw"
-# DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
+RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
 DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
+# RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
+# DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
 
 sequence_names = [
     '2011_09_26',
@@ -31,7 +31,7 @@ class KITTIRawPoses(object):
     def __init__(self, subseq, path=None):
         if path is None:
             seq = subseq[:10]
-            path = os.path.join(DATA_DIR, seq)
+            path = os.path.join(RAW_DATA_DIR, seq)
         self.path = path
         self.subseq = subseq
         self.gps2cam_transform = self.get_calibrations()
@@ -221,7 +221,7 @@ class Dataset:
     def __init__(self, subseq):
         self.ds_poses = KITTIRawPoses(subseq=subseq)
         self.ds_depths = KITTIDepthSelection(subseq=subseq)
-        self.poses = self.ds_poses.poses[self.ds_depths.ids]
+        self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
 
     def __len__(self):
@@ -256,7 +256,7 @@ def poses_demo():
     np.random.seed(135)
     seq = np.random.choice(sequence_names)
     while True:
-        subseq = np.random.choice(os.listdir(os.path.join(DATA_DIR, seq)))
+        subseq = np.random.choice(os.listdir(os.path.join(RAW_DATA_DIR, seq)))
         if '2011_' in subseq:
             break
     # subseq = "2011_09_26_drive_0002_sync"
@@ -286,7 +286,7 @@ def ts_demo():
     np.random.seed(135)
     seq = np.random.choice(sequence_names)
     while True:
-        subseq = np.random.choice(os.listdir(os.path.join(DATA_DIR, seq)))
+        subseq = np.random.choice(os.listdir(os.path.join(RAW_DATA_DIR, seq)))
         if '2011_' in subseq:
             break
 
@@ -321,21 +321,19 @@ def gradslam_demo():
     slam = PointFusion(device=device, odom="gt", dsratio=1)
     prev_frame = None
     pointclouds = Pointclouds(device=device)
-    global_map = Pointclouds(device=device)
-    for s in ds.ids:
-        colors, depths, intrinsics, poses = ds[s]
+
+    for i in ds.ids:
+        colors, depths, intrinsics, poses = ds[i]
 
         live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)
-        pointclouds, _ = slam.step(pointclouds, live_frame, prev_frame)
+        pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
 
         prev_frame = live_frame
-        global_map.append_points(pointclouds)
 
     # visualize using open3d
-    pc = pointclouds.points_list[0]
-    pcd_gt = o3d.geometry.PointCloud()
-    pcd_gt.points = o3d.utility.Vector3dVector(pc.cpu().detach().numpy())
-    o3d.visualization.draw_geometries([pcd_gt])
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].cpu().detach().numpy())
+    o3d.visualization.draw_geometries([pcd])
 
 
 def demo():
@@ -345,15 +343,14 @@ def demo():
     # subseq = "2011_09_26_drive_0005_sync"
     # subseq = "2011_09_26_drive_0023_sync"
 
-    ds_depth = KITTIDepthSelection(subseq=subseq)
-    ds_poses = KITTIRawPoses(subseq=subseq)
+    ds = Dataset(subseq=subseq)
 
-    poses = ds_poses.poses
-    depth_poses = poses[ds_depth.ids]
+    all_poses = ds.poses
+    depth_poses = ds.poses[ds.ds_depths.ids]
 
     plt.figure()
     plt.title("%s" % subseq)
-    plt.plot(poses[:, 0, 3], poses[:, 1, 3], '.')
+    plt.plot(all_poses[:, 0, 3], all_poses[:, 1, 3], '.')
     plt.plot(depth_poses[:, 0, 3], depth_poses[:, 1, 3], 'o')
     plt.grid()
     plt.xlabel('X [m]')
@@ -363,8 +360,15 @@ def demo():
 
     global_map = list()
     # using poses convert pcs to one coord frame, create and visualize map
-    for i in ds_depth.ids:
-        rgb_img_raw, depth_img_raw, K = ds_depth[i]
+    for i in ds.ids:
+        rgb_img_raw, depth_img_raw, K, pose = ds[i]
+
+        rgb_img_raw = np.asarray(rgb_img_raw.cpu().numpy().squeeze(), dtype=np.uint8)
+        depth_img_raw = depth_img_raw.cpu().numpy().squeeze()
+        K = K.cpu().numpy().squeeze()
+        pose = pose.squeeze().cpu().numpy()
+
+        K = K[:3, :3]
         w, h = rgb_img_raw.shape[:2]
 
         rgb_img = o3d.geometry.Image(rgb_img_raw)
@@ -375,8 +379,8 @@ def demo():
                                                       fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
 
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(image=rgbd_img, intrinsic=intrinsic)
+        # pcd = o3d.geometry.PointCloud.create_from_depth_image(depth=depth_img, intrinsic=intrinsic)
 
-        pose = ds_poses[i]
         pcd.transform(pose)
 
         # Flip it, otherwise the pointcloud will be upside down
