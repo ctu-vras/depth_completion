@@ -14,6 +14,7 @@ import gradslam
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 import open3d
+from PIL import Image
 
 
 # TODO: use os and file path instead
@@ -37,6 +38,8 @@ class KITTIRawPoses(object):
         if path is None:
             path = os.path.join(data_dir, seq, subseq)
         self.path = path
+        self.gps2cam_transform = self.get_calibrations()
+        #print("CALIB:", self.gps2cam_transform)
         self.poses = self.get_poses()
         self.ts = self.get_timestamps(sensor='gps')
         self.ids = range(len(self.ts))
@@ -75,6 +78,12 @@ class KITTIRawPoses(object):
         pose = np.eye(4)
         pose[:3, :3] = R
         pose[:3, 3] = np.array([x, y, z])
+        pose = np.matmul(pose, self.gps2cam_transform)
+        # TODO: apply transformations from gps sensor frame to cam frame
+        #       check which camera the image is (image 2 is left and image 3 is right are from different cameras
+        #       - specified in the paper and in some structure file)
+        #       read the paper for the dataset
+
         return pose
 
     def get_poses(self, zero_origin=False):
@@ -88,6 +97,32 @@ class KITTIRawPoses(object):
             # poses[:, :3, 3] -= pose0[:3, 3]
             poses = np.matmul(np.linalg.inv(pose0)[None], poses)
         return poses
+
+    def get_calibrations(self):
+        # Load calibration matrices
+        cal1 = self.load_calib_file("calib_imu_to_velo.txt")
+        cal2 = self.load_calib_file("calib_velo_to_cam.txt")
+        cal12 = np.matmul(cal1, cal2)
+        print(cal1)
+        print(cal2)
+        print(np.matmul(cal1, cal2))
+        print(np.matmul(cal2, cal1))
+        return cal12
+
+    def load_calib_file(self, file):
+        with open(os.path.join(self.path, file)) as f:
+            f.readline()
+            line2 = f.readline().rstrip().split()
+            line2.pop(0)
+            R = np.array(line2).astype(float).reshape((3, 3))
+            line3 = f.readline().rstrip().split()
+            line3.pop(0)
+            t = np.array(line3).astype(float).reshape((3, 1))
+            temp = np.zeros((1, 4), dtype=float)
+            temp[0, 3] = 1.0
+            cal = np.concatenate((R, t), 1)
+            cal = np.concatenate((cal, temp), 0)
+        return cal
 
     def get_stamps(self, subseq):
         stamps = list()
@@ -140,12 +175,13 @@ class KITTIDepth:
         # path directory should contain folders: depth, rgb, intrinsics
         self.path = path
         self.stamps = self.get_stamps()
-        self.depths = self.get_depths()
-        self.intrinsics = self.get_intrinsics()
-        self.rgbs = self.get_rgbs()
+        self.depths, self.depth_files = self.get_depths()
+        self.intrinsics, self.intrinsics_files = self.get_intrinsics()
+        self.rgbs, self.rgb_files = self.get_rgbs()
 
     def get_rgbs(self):
         rgbs = list()
+        rgb_files = list()
         rgb_dir = os.path.join(self.path, "rgb")
         for file in sorted(glob.glob(rgb_dir + "/*.png")):
             rgb = torch.tensor(cv2.imread(file, cv2.IMREAD_UNCHANGED))
@@ -153,21 +189,42 @@ class KITTIDepth:
             # TODO: change this to allow custom minibatch size
             rgb = torch.unsqueeze(torch.unsqueeze(rgb, 0), 0)
             rgbs.append(rgb)
-        return rgbs
+            rgb_files.append(file)
+        return rgbs, rgb_files
 
     def get_depths(self):
+        """
+        Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
+        which can be opened with either MATLAB, libpng++ or the latest version of
+        Python's pillow (from PIL import Image). A 0 value indicates an invalid pixel
+        (ie, no ground truth exists, or the estimation algorithm didn't produce an
+        estimate for that pixel). Otherwise, the depth for a pixel can be computed
+        in meters by converting the uint16 value to float and dividing it by 256.0:
+        disp(u,v)  = ((float)I(u,v))/256.0;
+        valid(u,v) = I(u,v)>0;
+        """
         depths = list()
-        depth_dir = os.path.join(self.path, "depth")
+        depth_files = list()
+        #depth_dir = os.path.join(self.path, "depth")
+        depth_dir = os.path.join(self.path, "velodyne_raw")
         for file in sorted(glob.glob(depth_dir + "/*.png")):
             # TODO: see if there are any better ways to store values, e.g. preprocessing like in DEPTH completion demo
-            depth = torch.tensor(cv2.imread(file, cv2.IMREAD_UNCHANGED).astype('int32'))
+            depth_png = np.array(Image.open(file), dtype=int)
+            # make sure we have a proper 16bit depth map here.. not 8bit!
+            assert (np.max(depth_png) > 255)
+            depth = depth_png.astype(float) / 256.
+            # depth = depth_png.astype(float)
+            depth[depth_png == 0] = -1.
+            depth = torch.tensor(depth)
             # transform file into gradslam format (B, S, H, W, CH), for now we will use B=1, S=1
             depth = torch.unsqueeze(torch.unsqueeze(torch.unsqueeze(depth, -1), 0), 0)
             depths.append(depth)
-        return depths
+            depth_files.append(file)
+        return depths, depth_files
 
     def get_intrinsics(self):
         intrinsics = list()
+        intr_files = list()
         intr_dir = os.path.join(self.path, "intrinsics")
         for file in sorted(glob.glob(intr_dir + "/*.txt")):
             intrinsics_i = torch.tensor(np.loadtxt(file), dtype=torch.double)
@@ -178,7 +235,8 @@ class KITTIDepth:
             intrinsics_i[3, 3] = 1.
             intrinsics_i = torch.unsqueeze(torch.unsqueeze(intrinsics_i, 0), 0)
             intrinsics.append(intrinsics_i)
-        return intrinsics
+            intr_files.append(file)
+        return intrinsics, intr_files
 
     def get_stamps(self):
         # identifiers of the pictures and corresponding data
@@ -208,10 +266,15 @@ class Dataset:
         self.stamps_raw = poses_dataset.stamps
         depth_dataset = KITTIDepth(depth_path)
         self.depths = depth_dataset.depths
+        self.detph_files = depth_dataset.depth_files
         self.intrinsics = depth_dataset.intrinsics
+        self.intrinsics_files = depth_dataset.intrinsics_files
         self.rgbs = depth_dataset.rgbs
+        self.rgb_files = depth_dataset.rgb_files
         self.stams_depth = depth_dataset.stamps
+
         self.data = self.create_correspondences()
+        self.data_o3d = self.get_corresp_o3d()
 
     def create_correspondences(self):
         data = list()   # list of tuples (colors, depth, intrinsics, poses)
@@ -219,9 +282,28 @@ class Dataset:
             if stamp in self.stams_depth:
                 i = self.stams_depth[stamp]     # index of depth data corresponding to raw data
                 # format poses for gradslam
-                poses = torch.tensor(self.poses_raw[self.stamps_raw.index(stamp)])
-                poses = torch.unsqueeze(torch.unsqueeze(poses, 0), 0)
-                d = (self.rgbs[i], self.depths[i], self.intrinsics[i], poses)
+                pose = torch.tensor(self.poses_raw[self.stamps_raw.index(stamp)])
+                pose = torch.unsqueeze(torch.unsqueeze(pose, 0), 0)
+                d = (self.rgbs[i], self.depths[i], self.intrinsics[i], pose)
+                data.append(d)
+        return data
+
+    def get_corresp_o3d(self):
+        # returns list of correspondences as open3d objects and poses
+        data = list()  # list of tuples (colors_files, depth_files, intrinsics_files, poses)
+        for stamp in self.stamps_raw:
+            if stamp in self.stams_depth:
+                i = self.stams_depth[stamp]     # index of depth data corresponding to raw data
+                # format poses for gradslam
+                pose = self.poses_raw[self.stamps_raw.index(stamp)]
+                depth_raw = open3d.io.read_image(self.detph_files[i])
+                color_raw = open3d.io.read_image(self.rgb_files[i])
+                rgbd_image = open3d.geometry.RGBDImage.create_from_color_and_depth(color_raw, depth_raw)
+                w, h = np.asarray(rgbd_image.color).shape
+                K = np.loadtxt(self.intrinsics_files[i]).reshape(3, 3)
+                intrinsics = open3d.camera.PinholeCameraIntrinsic(width=w, height=h,
+                                                               fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
+                d = (rgbd_image, intrinsics, pose)
                 data.append(d)
         return data
 
@@ -299,7 +381,8 @@ def gradslam_demo():
     slam = PointFusion(device=DEVICE, odom="gt", dsratio=4)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
-    for s in range(len(dataset)):
+    global_map = Pointclouds(device=DEVICE)
+    for s in range(0, len(dataset), 5):
         colors, depths, intrinsics, poses, *_ = dataset[s]
         depths = depths.float()
         colors = colors.float()
@@ -307,7 +390,9 @@ def gradslam_demo():
         poses = poses.float()
         live_frame = RGBDImages(colors, depths, intrinsics, poses).to(DEVICE)
         pointclouds, *_ = slam.step(pointclouds, live_frame, prev_frame)
+        # pointclouds, *_ = slam(live_frame)
         prev_frame = live_frame
+        # global_map.append_points(pointclouds)
         print(f"###### Creating map, step: {s}/{len(dataset) - 1} ######")
 
     # visualize using open3d
@@ -317,11 +402,40 @@ def gradslam_demo():
     open3d.visualization.draw_geometries([pcd_gt])
 
 
+def demo_pc():
+    # create point cloud from image (open3d pc from depth)
+    seq = "2011_09_26"
+    subseq = "2011_09_26_drive_0002_sync"
+    # subseq = "2011_09_26_drive_0005_sync"
+    # subseq = "2011_09_26_drive_0023_sync"
+    print("###### Loading data ... ######")
+    dataset = Dataset(seq, subseq, DEPTH_DATA_DIR)
+    data = dataset.data_o3d
+    print("###### Data loaded ######")
+    global_map = list()
+
+    # using poses convert pcs to one coord frame, create and visualize map
+    for i in range(len(data)):
+        rgbd_image, intrinsics, pose, *_ = data[i]
+        pcd = open3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, intrinsics)
+        # Flip it, otherwise the pointcloud will be upside down
+        pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+        # transform pc to coord frame of the first pc
+        if i > 0:
+            pcd.transform(pose)
+        # pcd.transform(pose)
+        print(pcd)
+        global_map.append(pcd)
+        # open3d.visualization.draw_geometries([pcd])
+    open3d.visualization.draw_geometries(global_map)
+
+
 def main():
     # for _ in range(3):
-    #     poses_demo()
+    # poses_demo()
     # ts_demo()
     gradslam_demo()
+    # demo_pc()
 
 
 if __name__ == '__main__':
