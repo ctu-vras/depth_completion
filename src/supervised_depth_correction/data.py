@@ -10,17 +10,15 @@ from scipy.spatial.transform import Slerp
 from tqdm import tqdm
 import datetime
 import torch
-import gradslam
-from gradslam import Pointclouds, RGBDImages
-from gradslam.slam import PointFusion
-import open3d
+import open3d as o3d
 from PIL import Image
 
 
 # TODO: use os and file path instead
-# data_dir = "/home/ruslan/data/datasets/kitti_raw"
-data_dir = "/home/jachym/KITTI/kitti_raw"
-DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
+DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
+# DATA_DIR = "/home/jachym/KITTI/kitti_raw"
+# DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
+DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 sequence_names = [
@@ -34,16 +32,16 @@ sequence_names = [
 
 class KITTIRawPoses(object):
 
-    def __init__(self, seq, subseq, path=None):
+    def __init__(self, subseq, path=None):
         if path is None:
-            path = os.path.join(data_dir, seq, subseq)
+            seq = subseq[:10]
+            path = os.path.join(DATA_DIR, seq)
         self.path = path
+        self.subseq = subseq
         self.gps2cam_transform = self.get_calibrations()
-        #print("CALIB:", self.gps2cam_transform)
-        self.poses = self.get_poses()
+        self.poses = self.get_cam_poses()
         self.ts = self.get_timestamps(sensor='gps')
         self.ids = range(len(self.ts))
-        self.stamps = self.get_stamps(subseq)
 
     @staticmethod
     def gps_to_ecef(lat, lon, alt, zero_origin=False):
@@ -78,24 +76,19 @@ class KITTIRawPoses(object):
         pose = np.eye(4)
         pose[:3, :3] = R
         pose[:3, 3] = np.array([x, y, z])
-        pose = np.matmul(pose, self.gps2cam_transform)
-        # TODO: apply transformations from gps sensor frame to cam frame
-        #       check which camera the image is (image 2 is left and image 3 is right are from different cameras
-        #       - specified in the paper and in some structure file)
-        #       read the paper for the dataset
-
         return pose
 
-    def get_poses(self, zero_origin=False):
+    def get_cam_poses(self, zero_origin=True):
         poses = []
-        for fname in np.sort(glob.glob(os.path.join(self.path, 'oxts/data/*.txt'))):
+        for fname in np.sort(glob.glob(os.path.join(self.path, self.subseq, 'oxts/data/*.txt'))):
             pose = self.get_gps_pose(fname)
             poses.append(pose)
         poses = np.asarray(poses)
         if zero_origin:
             pose0 = poses[0]
-            # poses[:, :3, 3] -= pose0[:3, 3]
             poses = np.matmul(np.linalg.inv(pose0)[None], poses)
+        # TODO: now we have Tr(gps -> cam0), we need Tr(gps->cam2 or cam3)
+        poses = np.matmul(poses, self.gps2cam_transform[None])
         return poses
 
     def get_calibrations(self):
@@ -103,10 +96,6 @@ class KITTIRawPoses(object):
         cal1 = self.load_calib_file("calib_imu_to_velo.txt")
         cal2 = self.load_calib_file("calib_velo_to_cam.txt")
         cal12 = np.matmul(cal1, cal2)
-        print(cal1)
-        print(cal2)
-        print(np.matmul(cal1, cal2))
-        print(np.matmul(cal2, cal1))
         return cal12
 
     def load_calib_file(self, file):
@@ -124,25 +113,17 @@ class KITTIRawPoses(object):
             cal = np.concatenate((cal, temp), 0)
         return cal
 
-    def get_stamps(self, subseq):
-        stamps = list()
-        for file in np.sort(glob.glob(os.path.join(self.path, 'oxts/data/*.txt'))):
-            file = file.replace(self.path + "/oxts/data/", "").replace(".txt", "")
-            stamp = subseq + "_" + file
-            stamps.append(stamp)
-        return stamps
-
-    def get_timestamps(self, sensor, zero_origin=False):
+    def get_timestamps(self, sensor='gps', zero_origin=False):
         assert isinstance(sensor, str)
         assert sensor == 'gps' or sensor == 'lidar'
         if sensor == 'gps':
-            folder = 'oxts'
+            sensor_folder = 'oxts'
         elif sensor == 'lidar':
-            folder = 'velodyne_points'
+            sensor_folder = 'velodyne_points'
         else:
             raise ValueError
         timestamps = []
-        ts = np.genfromtxt(os.path.join(self.path, folder, 'timestamps.txt'), dtype=str)
+        ts = np.genfromtxt(os.path.join(self.path, self.subseq, sensor_folder, 'timestamps.txt'), dtype=str)
         for t in ts:
             date = t[0]
             day_time, sec = t[1].split(".")
@@ -157,6 +138,7 @@ class KITTIRawPoses(object):
         return len(self.ids)
 
     def __getitem__(self, i):
+        assert i in self.ids
         return self.ts[i], self.poses[i]
 
     def __iter__(self):
@@ -164,35 +146,28 @@ class KITTIRawPoses(object):
             yield self[i]
 
 
-class KITTIDepth:
+class KITTIDepthSelection:
 
     """
     loads depth images, rgb images and intrinsics from
     KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
 
-    def __init__(self, path):
+    def __init__(self, subseq, path=None, camera="left"):
         # path directory should contain folders: depth, rgb, intrinsics
+        if path is None:
+            path = DEPTH_DATA_DIR
         self.path = path
-        self.stamps = self.get_stamps()
-        self.depths, self.depth_files = self.get_depths()
-        self.intrinsics, self.intrinsics_files = self.get_intrinsics()
-        self.rgbs, self.rgb_files = self.get_rgbs()
+        self.subseq = subseq
+        self.image = "image_02" if camera == 'left' else "image_03"
+        self.ids = self.get_ids()
 
-    def get_rgbs(self):
-        rgbs = list()
-        rgb_files = list()
-        rgb_dir = os.path.join(self.path, "rgb")
-        for file in sorted(glob.glob(rgb_dir + "/*.png")):
-            rgb = torch.tensor(cv2.imread(file, cv2.IMREAD_UNCHANGED))
-            # transform file into gradslam format (B, S, H, W, CH), for now we will use B=1, S=1
-            # TODO: change this to allow custom minibatch size
-            rgb = torch.unsqueeze(torch.unsqueeze(rgb, 0), 0)
-            rgbs.append(rgb)
-            rgb_files.append(file)
-        return rgbs, rgb_files
+    def get_rgb(self, i):
+        file = os.path.join(self.path, "image", "%s_image_%010d_%s.png" % (self.subseq, i, self.image))
+        rgb = np.asarray(Image.open(file))
+        return rgb
 
-    def get_depths(self):
+    def get_depth(self, i, gt=True, to_depth_map=False):
         """
         Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
         which can be opened with either MATLAB, libpng++ or the latest version of
@@ -203,60 +178,40 @@ class KITTIDepth:
         disp(u,v)  = ((float)I(u,v))/256.0;
         valid(u,v) = I(u,v)>0;
         """
-        depths = list()
-        depth_files = list()
-        #depth_dir = os.path.join(self.path, "depth")
-        depth_dir = os.path.join(self.path, "velodyne_raw")
-        for file in sorted(glob.glob(depth_dir + "/*.png")):
-            # TODO: see if there are any better ways to store values, e.g. preprocessing like in DEPTH completion demo
-            depth_png = np.array(Image.open(file), dtype=int)
-            # make sure we have a proper 16bit depth map here.. not 8bit!
-            assert (np.max(depth_png) > 255)
-            depth = depth_png.astype(float) / 256.
-            # depth = depth_png.astype(float)
-            depth[depth_png == 0] = -1.
-            depth = torch.tensor(depth)
-            # transform file into gradslam format (B, S, H, W, CH), for now we will use B=1, S=1
-            depth = torch.unsqueeze(torch.unsqueeze(torch.unsqueeze(depth, -1), 0), 0)
-            depths.append(depth)
-            depth_files.append(file)
-        return depths, depth_files
+        depth_label = "groundtruth_depth" if gt else "velodyne_raw"
+        file = os.path.join(self.path, depth_label, "%s_%s_%010d_%s.png" % (self.subseq, depth_label, i, self.image))
+        depth = np.array(Image.open(file), dtype=int)
+        # make sure we have a proper 16bit depth map here.. not 8bit!
+        assert (np.max(depth) > 255)
+        if to_depth_map:
+            depth = depth.astype(np.float) / 256.
+            depth[depth == 0] = -1.
+        return depth
 
-    def get_intrinsics(self):
-        intrinsics = list()
-        intr_files = list()
-        intr_dir = os.path.join(self.path, "intrinsics")
-        for file in sorted(glob.glob(intr_dir + "/*.txt")):
-            intrinsics_i = torch.tensor(np.loadtxt(file), dtype=torch.double)
-            # reshape intrinsics into a 4x4 matrix
-            intrinsics_i = torch.reshape(intrinsics_i, (3, 3))
-            intrinsics_i = torch.cat((intrinsics_i, torch.zeros(3, 1)), 1)
-            intrinsics_i = torch.cat((intrinsics_i, torch.zeros(1, 4)), 0)
-            intrinsics_i[3, 3] = 1.
-            intrinsics_i = torch.unsqueeze(torch.unsqueeze(intrinsics_i, 0), 0)
-            intrinsics.append(intrinsics_i)
-            intr_files.append(file)
-        return intrinsics, intr_files
+    def get_intrinsics(self, i):
+        file = os.path.join(self.path, "intrinsics", "%s_image_%010d_%s.txt" % (self.subseq, i, self.image))
+        K = np.loadtxt(file).reshape(3, 3)
+        return K
 
-    def get_stamps(self):
-        # identifiers of the pictures and corresponding data
-        # identifier is in format: SEQ_SUBSEQ_IMAGENUMBER
-        # e.g. 2011_09_26_drive_0002_sync_0000000008
-        # 2011_09_26_drive_0002_sync_groundtruth_depth_0000000026_image_03.png = format of the depth names
-        stamps = dict()
-        depth_dir = os.path.join(self.path, "depth")
-        depth_files = sorted(glob.glob(depth_dir + "/*.png"))
-        for i in range(len(depth_files)):
-            depth_file = depth_files[i].replace(depth_dir + "/", "")
-            identifier = depth_file[0:26] + depth_file[44:55]     # slice id from depth file name
-            stamps[identifier] = i
-        return stamps
+    def get_ids(self, gt=True):
+        ids = list()
+        depth_label = "groundtruth_depth" if gt else "velodyne_raw"
+        depth_files = sorted(glob.glob(os.path.join(self.path, depth_label,
+                                                    "%s_%s_*_%s.png" % (self.subseq, depth_label, self.image))))
+        for depth_file in depth_files:
+            id = int(depth_file[-23:-13])
+            ids.append(id)
+        return ids
 
     def __len__(self):
-        pass
+        return len(self.ids)
 
-    def __getitem__(self, item):
-        pass
+    def __getitem__(self, i):
+        assert i in self.ids
+        intrins = self.get_intrinsics(i)
+        rgb = self.get_rgb(i)
+        depth = self.get_depth(i)
+        return rgb, depth, intrins
 
 
 class Dataset:
@@ -264,7 +219,7 @@ class Dataset:
         poses_dataset = KITTIRawPoses(seq, subseq)
         self.poses_raw = poses_dataset.poses
         self.stamps_raw = poses_dataset.stamps
-        depth_dataset = KITTIDepth(depth_path)
+        depth_dataset = KITTIDepthSelection(depth_path)
         self.depths = depth_dataset.depths
         self.detph_files = depth_dataset.depth_files
         self.intrinsics = depth_dataset.intrinsics
@@ -302,7 +257,7 @@ class Dataset:
                 w, h = np.asarray(rgbd_image.color).shape
                 K = np.loadtxt(self.intrinsics_files[i]).reshape(3, 3)
                 intrinsics = open3d.camera.PinholeCameraIntrinsic(width=w, height=h,
-                                                               fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
+                                                                  fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
                 d = (rgbd_image, intrinsics, pose)
                 data.append(d)
         return data
@@ -315,20 +270,20 @@ class Dataset:
 
 
 def poses_demo():
-    # np.random.seed(135)
-    #seq = np.random.choice(sequence_names)
-    seq = "2011_09_26"
+    np.random.seed(135)
+    seq = np.random.choice(sequence_names)
     while True:
-        #subseq = np.random.choice(os.listdir(os.path.join(data_dir, seq)))
-        subseq = "2011_09_26_drive_0002_sync"
+        subseq = np.random.choice(os.listdir(os.path.join(DATA_DIR, seq)))
         if '2011_' in subseq:
             break
-    ds = KITTIRawPoses(seq=seq, subseq=subseq)
 
+    # subseq = "2011_09_26_drive_0002_sync"
+
+    ds = KITTIRawPoses(subseq=subseq)
     xs, ys, zs = ds.poses[:, 0, 3], ds.poses[:, 1, 3], ds.poses[:, 2, 3]
 
     plt.figure()
-    plt.title("%s/%s" % (seq, subseq))
+    plt.title("%s" % subseq)
     # plt.subplot(1, 2, 1)
     plt.plot(xs, ys, '.')
     plt.grid()
@@ -347,18 +302,19 @@ def poses_demo():
 
 def ts_demo():
     # np.random.seed(135)
-    # seq = np.random.choice(sequence_names)
-    seq = "2011_09_26"
+    seq = np.random.choice(sequence_names)
     while True:
-        subseq = np.random.choice(os.listdir(os.path.join(data_dir, seq)))
+        subseq = np.random.choice(os.listdir(os.path.join(DATA_DIR, seq)))
         if '2011_' in subseq:
             break
-    ds = KITTIRawPoses(seq=seq, subseq=subseq)
+
+    ds = KITTIRawPoses(subseq=subseq)
 
     ts_gps = ds.get_timestamps(sensor='gps', zero_origin=True)
     ts_velo = ds.get_timestamps(sensor='lidar', zero_origin=True)
 
     plt.figure()
+    plt.title("%s" % subseq)
     plt.plot(ts_gps[::5], '.', label='gps')
     plt.plot(ts_velo[::5], '.', label='lidar')
     plt.legend()
@@ -367,6 +323,8 @@ def ts_demo():
 
 
 def gradslam_demo():
+    from gradslam import Pointclouds, RGBDImages
+    from gradslam.slam import PointFusion
 
     # constructs global map using gradslam, visualizes resulting pointcloud
     seq = "2011_09_26"
@@ -402,40 +360,59 @@ def gradslam_demo():
     open3d.visualization.draw_geometries([pcd_gt])
 
 
-def demo_pc():
-    # create point cloud from image (open3d pc from depth)
-    seq = "2011_09_26"
+def demo():
     subseq = "2011_09_26_drive_0002_sync"
     # subseq = "2011_09_26_drive_0005_sync"
     # subseq = "2011_09_26_drive_0023_sync"
-    print("###### Loading data ... ######")
-    dataset = Dataset(seq, subseq, DEPTH_DATA_DIR)
-    data = dataset.data_o3d
-    print("###### Data loaded ######")
-    global_map = list()
 
+    ds_depth = KITTIDepthSelection(subseq=subseq)
+    ds_poses = KITTIRawPoses(subseq=subseq)
+
+    poses = ds_poses.poses
+    depth_poses = poses[ds_depth.ids]
+
+    plt.figure()
+    plt.title("%s" % subseq)
+    plt.plot(poses[:, 0, 3], poses[:, 1, 3], '.')
+    plt.plot(depth_poses[:, 0, 3], depth_poses[:, 1, 3], 'o')
+    plt.grid()
+    plt.xlabel('X [m]')
+    plt.ylabel('Y [m]')
+    plt.axis('equal')
+    plt.show()
+
+    global_map = list()
     # using poses convert pcs to one coord frame, create and visualize map
-    for i in range(len(data)):
-        rgbd_image, intrinsics, pose, *_ = data[i]
-        pcd = open3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, intrinsics)
+    for i in ds_depth.ids:
+        rgb_img_raw, depth_img_raw, K = ds_depth[i]
+
+        rgb_img = o3d.geometry.Image(rgb_img_raw)
+        depth_img = o3d.geometry.Image(np.asarray(depth_img_raw, dtype=np.uint16))
+        rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(color=rgb_img, depth=depth_img)
+
+        w, h = rgb_img_raw.shape[:2]
+        intrinsic = o3d.camera.PinholeCameraIntrinsic(width=w, height=h,
+                                                      fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
+
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(image=rgbd_img, intrinsic=intrinsic)
+
         # Flip it, otherwise the pointcloud will be upside down
-        pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-        # transform pc to coord frame of the first pc
-        if i > 0:
-            pcd.transform(pose)
-        # pcd.transform(pose)
-        print(pcd)
+        # pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+        # o3d.visualization.draw_geometries([pcd])
+
+        _, pose = ds_poses[i]
+
+        pcd.transform(pose)
         global_map.append(pcd)
-        # open3d.visualization.draw_geometries([pcd])
-    open3d.visualization.draw_geometries(global_map)
+
+    o3d.visualization.draw_geometries(global_map)
 
 
 def main():
-    # for _ in range(3):
     # poses_demo()
     # ts_demo()
-    gradslam_demo()
-    # demo_pc()
+    # gradslam_demo()
+    demo()
 
 
 if __name__ == '__main__':
