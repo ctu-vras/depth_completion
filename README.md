@@ -9,7 +9,7 @@ before proceeding next.
 
 ## Data sample from Subt simulator
 
-Download [RGB-D images](https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vtszih9-CQowisk0VD?usp=sharing)
+Download [RGB-D images](https://drive.google.com/drive/folders/1Y1GSDI-Qo6XpZZPtUTi9ou2tghoYh5fr?usp=sharing)
 
 And place it to the folder:
 ```
@@ -28,7 +28,7 @@ installation):
 
 Construct a map from RGBD images input:
 ```
-roslaunch gradslam_ros demo.launch odom:=gt
+roslaunch supervised_depth_correction demo.launch odom:=gt
 ```
 
 You may also want to visualize a ground truth mesh of the world by pacing the argument:
@@ -45,7 +45,7 @@ installed.
 Ground truth map from the simulator could be represented as a mesh file.
 
 Download
-[meshes](https://drive.google.com/drive/folders/1eB8sJmN4EknR7cjrke248aRFPaif8srg?usp=sharing)
+[meshes](https://drive.google.com/drive/folders/1S3UlJ4MgNsU72PTwJku-gyHZbv3aw26Z?usp=sharing)
 of some cave worlds.
 And place them to `./data/meshes/` folder.
 
@@ -77,8 +77,8 @@ In order to record a bag-file, launch the simulator and simply run:
 ```
 
 You can download prerecorded data from
-[here](https://drive.google.com/drive/folders/1GuZr6nvmH1_-31vtszih9-CQowisk0VD?usp=sharing).
+[here](https://drive.google.com/file/d/1kFbH38nbsHm7UR1B9Du3A0BcjLG1CiSR/view?usp=sharing).
 Ones you have a recorded bag-file, convert it to the ICL-NUIM format:
 ```bash
-roslaunch gradslam_ros bag2data.launch bag:=<full/path/to/bag/file.bag>
+roslaunch supervised_depth_correction bag2data.launch bag:=<full/path/to/bag/file.bag>
 ```
