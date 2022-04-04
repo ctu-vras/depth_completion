@@ -12,12 +12,11 @@ from PIL import Image
 
 
 # TODO: use os and file path instead
-# RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
-# DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
-RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
-DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
-# RAW_DATA_DIR = "/home.nfs/stanejac/KITTI/kitti_raw"
-# DEPTH_DATA_DIR = "/home.nfs/stanejac/KITTI/depth_selection/val_selection_cropped"
+RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
+DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/"
+DEPTH_SELECTION_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
+# RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
+# DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
 
 sequence_names = [
     '2011_09_26',
@@ -28,7 +27,7 @@ sequence_names = [
 ]
 
 
-class KITTIRawPoses(object):
+class KITTIRaw(object):
 
     def __init__(self, subseq, path=None):
         if path is None:
@@ -36,7 +35,7 @@ class KITTIRawPoses(object):
             path = os.path.join(RAW_DATA_DIR, seq)
         self.path = path
         self.subseq = subseq
-        self.gps2cam_transform = self.get_calibrations()
+        self.gps2cam_transform = self.get_imu2cam_transform()
         self.poses = self.get_cam_poses()
         self.ts = self.get_timestamps(sensor='gps')
         self.ids = range(len(self.ts))
@@ -93,14 +92,14 @@ class KITTIRawPoses(object):
 
         return poses
 
-    def get_calibrations(self):
+    def get_imu2cam_transform(self):
         # Load calibration matrices
-        TrImuToVelo = self.load_calib_file("calib_imu_to_velo.txt")
-        TrVeloToCam = self.load_calib_file("calib_velo_to_cam.txt")
+        TrImuToVelo = self.get_transform("calib_imu_to_velo.txt")
+        TrVeloToCam = self.get_transform("calib_velo_to_cam.txt")
         TrImuToCam0 = np.matmul(TrImuToVelo, TrVeloToCam)
         return np.asarray(TrImuToCam0)
 
-    def load_calib_file(self, file):
+    def get_transform(self, file):
         """Read calibration from file.
             :param str file: File name.
             :return numpy.matrix: Calibration.
@@ -138,6 +137,19 @@ class KITTIRawPoses(object):
             timestamps = [t - timestamps[0] for t in timestamps]
         return timestamps
 
+    def get_intrinsics(self, cam_id):
+        """Read calibration from file.
+            :param int cam_id: Camera id: 0, 1, 2, 3.
+            :return numpy.matrix: Intrinsics matrix.
+        """
+        fpath = os.path.join(self.path, "calib_cam_to_cam.txt")
+        with open(fpath, 'r') as f:
+            s = f.read()
+        i_K_start = s.index('K_%02d:' % cam_id)
+        i_K_end = i_K_start + 5 + s[i_K_start + 5:].index('\n')
+        K = np.mat(s[i_K_start + 5:i_K_end], dtype=np.float64).reshape((3, 3))
+        return K
+
     def __len__(self):
         return len(self.ids)
 
@@ -150,21 +162,91 @@ class KITTIRawPoses(object):
             yield self[i]
 
 
-class KITTIDepthSelection:
+class KITTIDepth:
+    """
+    RGB-D data from KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
+    """
+    def __init__(self, subseq=None, mode='val', path=None, camera="left"):
+        assert mode == 'train' or mode == 'val'
+        if path is None:
+            path = os.path.join(DEPTH_DATA_DIR, mode, subseq)
+        self.path = path
+        self.image = "image_02" if camera == 'left' else "image_03"
+        self.ids = None
+        self.depths = None
+        self.subseq = subseq
+        self.raw = KITTIRaw(subseq=subseq)
+
+    def get_depth(self, id, gt=False, cam='left'):
+        """
+        Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
+        which can be opened with either MATLAB, libpng++ or the latest version of
+        Python's pillow (from PIL import Image). A 0 value indicates an invalid pixel
+        (ie, no ground truth exists, or the estimation algorithm didn't produce an
+        estimate for that pixel). Otherwise, the depth for a pixel can be computed
+        in meters by converting the uint16 value to float and dividing it by 256.0:
+        disp(u,v)  = ((float)I(u,v))/256.0;
+        valid(u,v) = I(u,v)>0;
+        Args:
+            id: int
+            gt: bool
+            cam: str, 'letf' or 'right'
+        Returns:
+            depth: np.array, depth image
+        """
+        depth_folder = 'groundtruth' if gt else 'velodyne_raw'
+        camera_n = 2 if cam == 'left' else 3
+        fpath = os.path.join(self.path, 'proj_depth', depth_folder, 'image_%02d/%010d.png' % (camera_n, id))
+
+        depth_png = np.array(Image.open(fpath), dtype=int)
+        # make sure we have a proper 16bit depth map here.. not 8bit!
+        assert (np.max(depth_png) > 255)
+        depth = depth_png.astype(np.float) / 256.
+        depth[depth_png == 0] = -1.
+        return depth
+
+    def get_rgb(self, i):
+        return None
+
+    def get_intrinsics(self, i):
+        camera_n = int(self.image[-2:])
+        K = self.raw.get_intrinsics(camera_n)
+        return K
+
+    def get_ids(self, gt=True):
+        ids = list()
+        depth_label = "groundtruth" if gt else "velodyne_raw"
+        depth_files = sorted(glob.glob(os.path.join(self.path, "proj_depth", depth_label, self.image, "*")))
+        for depth_file in depth_files:
+            id = int(depth_file[-14:-4])
+            ids.append(id)
+        return ids
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, i):
+        assert i in self.ids
+        intrins = self.get_intrinsics(i)
+        rgb = self.get_rgb(i)
+        depth = self.get_depth(i)
+        return rgb, depth, intrins
+
+
+class KITTIDepthSelection(KITTIDepth):
 
     """
     loads depth images, rgb images and intrinsics from
-    KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
+    KITTI depth selection: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
 
-    def __init__(self, subseq, path=None, camera="left", gt=True):
+    def __init__(self, subseq, path=None):
+        super(KITTIDepth, self).__init__()
         # path directory should contain folders: depth, rgb, intrinsics
         if path is None:
-            path = DEPTH_DATA_DIR
+            path = DEPTH_SELECTION_DATA_DIR
         self.path = path
         self.subseq = subseq
-        self.gt = gt
-        self.image = "image_02" if camera == 'left' else "image_03"
         self.ids = self.get_ids()
 
     def get_rgb(self, i):
@@ -172,7 +254,7 @@ class KITTIDepthSelection:
         rgb = np.asarray(Image.open(file))
         return rgb
 
-    def get_depth(self, i, to_depth_map=False):
+    def get_depth(self, i, gt=True, to_depth_map=False):
         """
         Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
         which can be opened with either MATLAB, libpng++ or the latest version of
@@ -183,7 +265,7 @@ class KITTIDepthSelection:
         disp(u,v)  = ((float)I(u,v))/256.0;
         valid(u,v) = I(u,v)>0;
         """
-        depth_label = "groundtruth_depth" if self.gt else "velodyne_raw"
+        depth_label = "groundtruth_depth" if gt else "velodyne_raw"
         file = os.path.join(self.path, depth_label, "%s_%s_%010d_%s.png" % (self.subseq, depth_label, i, self.image))
         depth = np.array(Image.open(file), dtype=int)
         r, c = depth.shape[:2]
@@ -199,9 +281,9 @@ class KITTIDepthSelection:
         K = np.loadtxt(file).reshape(3, 3)
         return K
 
-    def get_ids(self):
+    def get_ids(self, gt=True):
         ids = list()
-        depth_label = "groundtruth_depth" if self.gt else "velodyne_raw"
+        depth_label = "groundtruth_depth" if gt else "velodyne_raw"
         depth_files = sorted(glob.glob(os.path.join(self.path, depth_label,
                                                     "%s_%s_*_%s.png" % (self.subseq, depth_label, self.image))))
         for depth_file in depth_files:
@@ -209,21 +291,11 @@ class KITTIDepthSelection:
             ids.append(id)
         return ids
 
-    def __len__(self):
-        return len(self.ids)
-
-    def __getitem__(self, i):
-        assert i in self.ids
-        intrins = self.get_intrinsics(i)
-        rgb = self.get_rgb(i)
-        depth = self.get_depth(i)
-        return rgb, depth, intrins
-
 
 class Dataset:
-    def __init__(self, subseq, gt=True):
-        self.ds_poses = KITTIRawPoses(subseq=subseq)
-        self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt)
+    def __init__(self, subseq):
+        self.ds_poses = KITTIRaw(subseq=subseq)
+        self.ds_depths = KITTIDepthSelection(subseq=subseq)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
 
@@ -263,7 +335,7 @@ def poses_demo():
             break
     # subseq = "2011_09_26_drive_0002_sync"
 
-    ds = KITTIRawPoses(subseq=subseq)
+    ds = KITTIRaw(subseq=subseq)
     xs, ys, zs = ds.poses[:, 0, 3], ds.poses[:, 1, 3], ds.poses[:, 2, 3]
 
     plt.figure()
@@ -292,7 +364,7 @@ def ts_demo():
         if '2011_' in subseq:
             break
 
-    ds = KITTIRawPoses(subseq=subseq)
+    ds = KITTIRaw(subseq=subseq)
 
     ts_gps = ds.get_timestamps(sensor='gps', zero_origin=True)
     ts_velo = ds.get_timestamps(sensor='lidar', zero_origin=True)
@@ -323,7 +395,6 @@ def gradslam_demo():
     slam = PointFusion(device=device, odom="gt", dsratio=1)
     prev_frame = None
     pointclouds = Pointclouds(device=device)
-    global_map = Pointclouds(device=device)
 
     for i in ds.ids:
         colors, depths, intrinsics, poses = ds[i]
@@ -331,16 +402,15 @@ def gradslam_demo():
         live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)
         pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
 
-
-        global_map.append_points(pointclouds.transform(torch.squeeze(poses)))
+        prev_frame = live_frame
 
     # visualize using open3d
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(global_map.points_list[0].cpu().detach().numpy())
+    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].cpu().detach().numpy())
     o3d.visualization.draw_geometries([pcd])
 
 
-def demo():
+def depth_selection_demo():
     import open3d as o3d
 
     subseq = "2011_09_26_drive_0002_sync"
@@ -364,9 +434,7 @@ def demo():
 
     global_map = list()
     # using poses convert pcs to one coord frame, create and visualize map
-    print(ds.ids)
     for i in ds.ids:
-        print(f"Iteration {i}")
         rgb_img_raw, depth_img_raw, K, pose = ds[i]
 
         rgb_img_raw = np.asarray(rgb_img_raw.cpu().numpy().squeeze(), dtype=np.uint8)
@@ -394,7 +462,7 @@ def demo():
         # o3d.visualization.draw_geometries([pcd])
 
         global_map.append(pcd)
-    print(len(global_map))
+
     o3d.visualization.draw_geometries(global_map)
 
 
@@ -436,12 +504,20 @@ def pykitti_demo():
     cam2_image, cam3_image = data.get_rgb(3)
 
 
+def depth_demo():
+    subseq = '2011_09_26_drive_0002_sync'
+    ds = KITTIDepth(subseq=subseq)
+    # ds.get_intrinsics(5)
+    ds.get_ids()
+
+
 def main():
     # poses_demo()
     # ts_demo()
-    gradslam_demo()
+    # gradslam_demo()
     # pykitti_demo()
-    # demo()
+    # depth_selection_demo()
+    depth_demo()
 
 
 if __name__ == '__main__':
