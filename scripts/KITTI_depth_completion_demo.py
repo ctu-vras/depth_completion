@@ -1,4 +1,4 @@
-from data import Dataset
+from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.models import DnCNN_c, SparseConvNet
 import torch
 import open3d as o3d
@@ -15,6 +15,7 @@ CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
 DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
+# DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
 # RAW_DATA_DIR = "/home.nfs/stanejac/KITTI/kitti_raw"
 # DEPTH_DATA_DIR = "/home.nfs/stanejac/KITTI/depth_selection/val_selection_cropped"
 EPISODES = 1000
@@ -26,7 +27,7 @@ def main():
     # prepare datasets, model and optimizer
     print("###### Loading data ######")
     subseq = "2011_09_26_drive_0002_sync"
-    dataset_gt = Dataset(subseq=subseq)
+    dataset_gt = Dataset(subseq=subseq, gt=True)
     dataset_sparse = Dataset(subseq=subseq, gt=False)
     data_len = len(dataset_gt.ids)
     # model = DnCNN_c(channels=1, num_of_layers=17)

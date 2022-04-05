@@ -171,18 +171,19 @@ class KITTIDepth:
     """
     RGB-D data from KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
-    def __init__(self, subseq=None, mode='val', path=None, camera="left"):
+    def __init__(self, subseq=None, mode='val', path=None, camera="left", gt=True):
         assert mode == 'train' or mode == 'val'
         if path is None:
             path = os.path.join(DEPTH_DATA_DIR, mode, subseq)
         self.path = path
         self.image = "image_02" if camera == 'left' else "image_03"
+        self.gt = gt
         self.ids = self.get_ids()
         self.depths = None
         self.subseq = subseq
         self.raw = KITTIRaw(subseq=subseq)
 
-    def get_depth(self, id, gt=False):
+    def get_depth(self, id):
         """
         Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
         which can be opened with either MATLAB, libpng++ or the latest version of
@@ -194,11 +195,10 @@ class KITTIDepth:
         valid(u,v) = I(u,v)>0;
         Args:
             id: int
-            gt: bool
         Returns:
             depth: np.array, depth image
         """
-        depth_folder = 'groundtruth' if gt else 'velodyne_raw'
+        depth_folder = 'groundtruth' if self.gt else 'velodyne_raw'
         fpath = os.path.join(self.path, 'proj_depth', depth_folder, self.image, '%010d.png' % id)
 
         depth_png = np.array(Image.open(fpath), dtype=int)
@@ -206,7 +206,8 @@ class KITTIDepth:
         assert (np.max(depth_png) > 255)
         depth = depth_png.astype(np.float) / 256.
         depth[depth_png == 0] = -1.
-        return depth
+        r, c = depth.shape[:2]
+        return depth.reshape([r, c, 1])
 
     def get_rgb(self, i):
         rgb = self.raw.get_rgb(i, image=self.image)
@@ -217,9 +218,9 @@ class KITTIDepth:
         K = self.raw.get_intrinsics(camera_n)
         return K
 
-    def get_ids(self, gt=True):
+    def get_ids(self):
         ids = list()
-        depth_label = "groundtruth" if gt else "velodyne_raw"
+        depth_label = "groundtruth" if self.gt else "velodyne_raw"
         depth_files = sorted(glob.glob(os.path.join(self.path, "proj_depth", depth_label, self.image, "*")))
         for depth_file in depth_files:
             id = int(depth_file[-14:-4])
@@ -244,12 +245,13 @@ class KITTIDepthSelection(KITTIDepth):
     KITTI depth selection: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
 
-    def __init__(self, subseq, path=None):
+    def __init__(self, subseq, path=None, gt=True):
         super(KITTIDepth, self).__init__()
         # path directory should contain folders: depth, rgb, intrinsics
         if path is None:
             path = DEPTH_SELECTION_DATA_DIR
         self.path = path
+        self.gt = gt
         self.subseq = subseq
         self.ids = self.get_ids()
 
@@ -258,7 +260,7 @@ class KITTIDepthSelection(KITTIDepth):
         rgb = np.asarray(Image.open(file))
         return rgb
 
-    def get_depth(self, i, gt=True, to_depth_map=False):
+    def get_depth(self, i, to_depth_map=False):
         """
         Depth maps (annotated and raw Velodyne scans) are saved as uint16 PNG images,
         which can be opened with either MATLAB, libpng++ or the latest version of
@@ -269,7 +271,7 @@ class KITTIDepthSelection(KITTIDepth):
         disp(u,v)  = ((float)I(u,v))/256.0;
         valid(u,v) = I(u,v)>0;
         """
-        depth_label = "groundtruth_depth" if gt else "velodyne_raw"
+        depth_label = "groundtruth_depth" if self.gt else "velodyne_raw"
         file = os.path.join(self.path, depth_label, "%s_%s_%010d_%s.png" % (self.subseq, depth_label, i, self.image))
         depth = np.array(Image.open(file), dtype=int)
         r, c = depth.shape[:2]
@@ -285,9 +287,9 @@ class KITTIDepthSelection(KITTIDepth):
         K = np.loadtxt(file).reshape(3, 3)
         return K
 
-    def get_ids(self, gt=True):
+    def get_ids(self):
         ids = list()
-        depth_label = "groundtruth_depth" if gt else "velodyne_raw"
+        depth_label = "groundtruth_depth" if self.gt else "velodyne_raw"
         depth_files = sorted(glob.glob(os.path.join(self.path, depth_label,
                                                     "%s_%s_*_%s.png" % (self.subseq, depth_label, self.image))))
         for depth_file in depth_files:
@@ -297,12 +299,12 @@ class KITTIDepthSelection(KITTIDepth):
 
 
 class Dataset:
-    def __init__(self, subseq, selection=False):
+    def __init__(self, subseq, selection=False, gt=True):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
-            self.ds_depths = KITTIDepthSelection(subseq=subseq)
+            self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt)
         else:
-            self.ds_depths = KITTIDepth(subseq=subseq)
+            self.ds_depths = KITTIDepth(subseq=subseq, gt=gt)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
 
