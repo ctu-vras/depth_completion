@@ -136,3 +136,6 @@ dmypy.json
 *.simg
 *.img
 data
+
+# Model weights
+*.pth

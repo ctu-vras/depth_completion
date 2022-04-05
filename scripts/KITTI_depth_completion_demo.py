@@ -13,12 +13,8 @@ Model aims to convert sparse depth images into dense ones
 # DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
-RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
-DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
-# DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
-# RAW_DATA_DIR = "/home.nfs/stanejac/KITTI/kitti_raw"
-# DEPTH_DATA_DIR = "/home.nfs/stanejac/KITTI/depth_selection/val_selection_cropped"
 EPISODES = 1000
+USE_DEPTH_SELECTION = True
 LR = 0.001
 WEIGHT_DECAY = 0.01
 
@@ -27,8 +23,8 @@ def main():
     # prepare datasets, model and optimizer
     print("###### Loading data ######")
     subseq = "2011_09_26_drive_0002_sync"
-    dataset_gt = Dataset(subseq=subseq, gt=True)
-    dataset_sparse = Dataset(subseq=subseq, gt=False)
+    dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True)
+    dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False)
     data_len = len(dataset_gt.ids)
     # model = DnCNN_c(channels=1, num_of_layers=17)
     print("###### Data loaded ######")

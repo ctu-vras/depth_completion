@@ -11,12 +11,17 @@ import torch
 from PIL import Image
 
 
-# TODO: use os and file path instead
-RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
-DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/"
-DEPTH_SELECTION_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
+# RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
+# DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/"
+# DEPTH_SELECTION_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
 # RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
 # DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
+
+# the following paths assume that you have the datasets or symlinks in supervised_depth_correction/data folder
+RAW_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'kitti_raw'))
+DEPTH_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'kitti_depth'))
+DEPTH_SELECTION_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data',
+                                                         'kitti_depth', 'depth_selection', 'val_selection_cropped'))
 
 sequence_names = [
     '2011_09_26',
@@ -178,10 +183,9 @@ class KITTIDepth:
         self.path = path
         self.image = "image_02" if camera == 'left' else "image_03"
         self.gt = gt
-        self.ids = self.get_ids()
-        self.depths = None
         self.subseq = subseq
         self.raw = KITTIRaw(subseq=subseq)
+        self.ids = self.get_ids()
 
     def get_depth(self, id):
         """
@@ -246,7 +250,7 @@ class KITTIDepthSelection(KITTIDepth):
     """
 
     def __init__(self, subseq, path=None, gt=True):
-        super(KITTIDepth, self).__init__()
+        KITTIDepth.__init__(self, subseq=subseq, path=path, gt=gt)
         # path directory should contain folders: depth, rgb, intrinsics
         if path is None:
             path = DEPTH_SELECTION_DATA_DIR
