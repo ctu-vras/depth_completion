@@ -132,8 +132,10 @@ dmypy.json
 .idea/
 
 # Big files
-data/explorer*
 *.bag
-data/meshes
 *.simg
 *.img
+data
+
+# Model weights
+*.pth
