@@ -2,11 +2,9 @@
 
 import torch
 from torch.utils.data import DataLoader
-from gradslam.datasets.icl import ICL
-from gradslam.datasets.tum import TUM
+from supervised_depth_correction.data import Dataset
 from gradslam.slam.pointfusion import PointFusion
 from gradslam import Pointclouds, RGBDImages
-from gradslam.datasets.datautils import normalize_image
 from time import time
 from tqdm import tqdm
 import numpy as np
@@ -56,18 +54,14 @@ def get_camera_info_msg(image_width, image_height, K,
 
 class GradslamROS:
     def __init__(self,
-                 dataset_path: str,
-                 seqlen: float = 100,
+                 subseq: str,
                  odometry: str = 'gt',
                  width: int = 320,
                  height: int = 240):
         # select device
         self.width, self.height = width, height
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        dataset = TUM(dataset_path, seqlen=seqlen, height=height, width=width)
-        loader = DataLoader(dataset=dataset, batch_size=1)
-        colors, depths, intrinsics, poses, *_ = next(iter(loader))
-        self.rgbdimages = RGBDImages(colors, depths, intrinsics, poses, channels_first=False, device=self.device)
+        self.dataset = Dataset(subseq=subseq)
         self.slam = PointFusion(odom=odometry, dsratio=1, device=self.device)
 
         self.world_frame = 'world'
@@ -79,15 +73,16 @@ class GradslamROS:
 
     def run(self):
         # SLAM: step by step
-        seq_len = self.rgbdimages.shape[1]
-        initial_poses = torch.eye(4, device=self.device).view(1, 1, 4, 4)
         prev_frame = None
         pointclouds = Pointclouds(device=self.device)
-        for s in tqdm(range(seq_len)):
+        for i in tqdm(self.dataset.ids[::5]):
             if rospy.is_shutdown():
                 break
             t1 = time()
-            live_frame = self.rgbdimages[:, s]
+            colors, depths, intrinsics, poses = self.dataset[i]
+
+            live_frame = RGBDImages(colors, depths, intrinsics, poses).to(self.device)
+
             # print(torch.min(live_frame.depth_image), torch.max(live_frame.depth_image), live_frame.depth_image.dtype)
             # if s == 0 and live_frame.poses is None:
             #     live_frame.poses = initial_poses
@@ -136,10 +131,10 @@ class GradslamROS:
 
 
 if __name__ == "__main__":
-    rospy.init_node('gradslam_ros', log_level=rospy.INFO)
-    dataset_path = '/home/ruslan/subt/thirdparty/active_slam/gradslam/examples/tutorials/TUM/'
-    odometry = rospy.get_param('~odometry')  # gt, icp, gradicp
-    proc = GradslamROS(dataset_path=dataset_path, odometry=odometry, seqlen=500)
+    rospy.init_node('gradslam_kitti_depth', log_level=rospy.INFO)
+    subseq = "2011_09_26_drive_0001_sync"
+    odometry = rospy.get_param('~odometry', 'gt')  # gt, icp, gradicp
+    proc = GradslamROS(subseq=subseq, odometry=odometry)
     try:
         proc.run()
     except KeyboardInterrupt:

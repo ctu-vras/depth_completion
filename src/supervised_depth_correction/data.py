@@ -18,10 +18,10 @@ from PIL import Image
 # DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
 
 # the following paths assume that you have the datasets or symlinks in supervised_depth_correction/data folder
-RAW_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'kitti_raw'))
-DEPTH_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'kitti_depth'))
+RAW_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'KITTI', 'raw'))
+DEPTH_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'KITTI', 'depth'))
 DEPTH_SELECTION_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data',
-                                                         'kitti_depth', 'depth_selection', 'val_selection_cropped'))
+                                                         'KITTI', 'depth', 'depth_selection', 'val_selection_cropped'))
 
 sequence_names = [
     '2011_09_26',
@@ -176,7 +176,7 @@ class KITTIDepth:
     """
     RGB-D data from KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
-    def __init__(self, subseq=None, mode='val', path=None, camera="left", gt=True):
+    def __init__(self, subseq=None, mode='train', path=None, camera="left", gt=True):
         assert mode == 'train' or mode == 'val'
         if path is None:
             path = os.path.join(DEPTH_DATA_DIR, mode, subseq)
@@ -208,7 +208,7 @@ class KITTIDepth:
         depth_png = np.array(Image.open(fpath), dtype=int)
         # make sure we have a proper 16bit depth map here.. not 8bit!
         assert (np.max(depth_png) > 255)
-        depth = depth_png.astype(np.float) / 256.
+        depth = depth_png.astype(float) / 256.
         depth[depth_png == 0] = -1.
         r, c = depth.shape[:2]
         return depth.reshape([r, c, 1])
@@ -303,7 +303,7 @@ class KITTIDepthSelection(KITTIDepth):
 
 
 class Dataset:
-    def __init__(self, subseq, selection=False, gt=True):
+    def __init__(self, subseq, selection=False, gt=False):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
             self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt)
@@ -312,14 +312,18 @@ class Dataset:
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
 
+        # move poses to origin to 0:
+        # Tr_inv = np.linalg.inv(self.poses[0])
+        # self.poses = np.asarray([np.matmul(Tr_inv, pose) for pose in self.poses])
+
     def __len__(self):
         return len(self.ids)
 
-    def __getitem__(self, item):
+    def __getitem__(self, i):
         """
         Provides input data, that could be used with GradSLAM
         Args:
-            item: int
+            i: int
 
         Returns:
             data: list(colors, depths, intrinsics, poses)
@@ -328,9 +332,15 @@ class Dataset:
                   intrinsics: torch.Tensor (B x N x 4 x 4)
                   poses: torch.Tensor (B x N x 4 x 4)
         """
+        if not i in self.ids:
+            item = self.ids[i]
+        else:
+            item = i
         assert item in self.ids
         colors, depths, K = self.ds_depths[item]
-        poses = self.ds_poses[item]
+        # for p1, p2 in zip(self.poses, self.ds_poses.poses):
+        #     assert np.allclose(p1, p2)
+        poses = self.poses[item]
 
         intrinsics = np.eye(4)
         intrinsics[:3, :3] = K
@@ -398,11 +408,11 @@ def gradslam_demo():
     import open3d as o3d
 
     # constructs global map using gradslam, visualizes resulting pointcloud
-    subseq = "2011_09_26_drive_0002_sync"
+    subseq = "2011_09_26_drive_0001_sync"
     # subseq = "2011_09_26_drive_0005_sync"
     # subseq = "2011_09_26_drive_0023_sync"
 
-    ds = Dataset(subseq)
+    ds = Dataset(subseq, gt=False)
     device = torch.device('cpu')
 
     # create global map
@@ -410,7 +420,7 @@ def gradslam_demo():
     prev_frame = None
     pointclouds = Pointclouds(device=device)
 
-    for i in ds.ids:
+    for i in ds.ids[::5]:
         colors, depths, intrinsics, poses = ds[i]
 
         live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)
@@ -428,7 +438,7 @@ def depth_demo():
     import open3d as o3d
 
     # subseq = "2011_09_26_drive_0002_sync"
-    subseq = "2011_09_26_drive_0005_sync"
+    subseq = "2011_09_26_drive_0001_sync"
     # subseq = "2011_09_26_drive_0023_sync"
 
     ds = Dataset(subseq=subseq)
@@ -466,8 +476,8 @@ def depth_demo():
         intrinsic = o3d.camera.PinholeCameraIntrinsic(width=w, height=h,
                                                       fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
 
-        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(image=rgbd_img, intrinsic=intrinsic)
-        # pcd = o3d.geometry.PointCloud.create_from_depth_image(depth=depth_img, intrinsic=intrinsic)
+        # pcd = o3d.geometry.PointCloud.create_from_rgbd_image(image=rgbd_img, intrinsic=intrinsic)
+        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth=depth_img, intrinsic=intrinsic)
 
         pcd.transform(pose)
 
@@ -521,7 +531,7 @@ def pykitti_demo():
 def main():
     # poses_demo()
     # ts_demo()
-    # gradslam_demo()
+    gradslam_demo()
     # pykitti_demo()
     depth_demo()
 
