@@ -32,7 +32,6 @@ From: ros:noetic-perception
     iopath
     fvcore
     tensorboard
-    torch==1.10.0
     dgp==0.0.91
     matplotlib==3.4.3
     open3d==0.10.0.0
@@ -46,8 +45,11 @@ From: ros:noetic-perception
     tqdm==4.62.3
     "
     pip install ${python_pkgs}
+    # pytorch
+    #pip install torch==1.10.1+cu113 -f https://download.pytorch.org/whl/torch_stable.html
+    pip install torch==1.10.1 --extra-index-url https://download.pytorch.org/whl/cu113
     # Pytorch3d
-    pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+    pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1101/download.html
     # GradSLAM
     pip install 'git+https://github.com/gradslam/gradslam.git'
     ln -s /usr/bin/python3 /usr/bin/python
