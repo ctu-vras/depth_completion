@@ -4,6 +4,8 @@ import torch
 import open3d as o3d
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+import time
 
 """
 Model aims to convert sparse depth images into dense ones
@@ -17,6 +19,7 @@ EPISODES = 1000
 USE_DEPTH_SELECTION = True
 LR = 0.001
 WEIGHT_DECAY = 0.01
+VISUALIZE =False
 
 
 def main():
@@ -34,6 +37,9 @@ def main():
     model = model.to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     loss_training = []
+    log_dir = f'./results/depth_completion_{time.time()}'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     print("###### Starting training ... ######")
 
     # learning loop
@@ -60,7 +66,7 @@ def main():
 
         # result visualization
         if episode == EPISODES or episode % (EPISODES // 4) == 0:
-            torch.save(model.state_dict(), f"weights-{episode}.pth")
+            torch.save(model.state_dict(), os.path.join(log_dir, f"weights-{episode}.pth"))
 
             # convert depth into np images
             depth_img_gt_np = depth_img_gt.detach().cpu().numpy().squeeze()
@@ -81,20 +87,23 @@ def main():
             ax.set_title('Prediction')
             fig.tight_layout(h_pad=1)
             # save plot
-            plt.savefig(f'plots{episode}.png')
-            # show plot
-            plt.show()
+            plt.savefig(os.path.join(log_dir, f'plot-{episode}.png'))
+            if VISUALIZE:
+                # show plot
+                plt.show()
     # END training loop
 
     # plot loss over episodes
     x_ax = [i for i in range(len(loss_training))]
-    y_ax = loss_training
+    y_ax = [loss.detach().cpu().numpy() for loss in loss_training]
+    plt.figure()
     plt.plot(x_ax, y_ax)
     plt.xlabel('Episode')
     plt.ylabel('Training loss')
     plt.title('Loss over episodes')
-    plt.savefig(f'Training_loss.png')
-    plt.show()
+    plt.savefig(os.path.join(log_dir, 'Training_loss.png'))
+    if VISUALIZE:
+        plt.show()
 
 
 def loss_mse(depth_gt, depth_pred):

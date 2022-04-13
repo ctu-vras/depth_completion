@@ -3,7 +3,6 @@ From: ros:noetic-perception
 
 %post
     export XDG_CACHE_HOME=/tmp/singularity-cache # pip cache
-
     # Install Apt packages
     packages="
     gcc
@@ -45,28 +44,16 @@ From: ros:noetic-perception
     tqdm==4.62.3
     "
     pip install ${python_pkgs}
-    # pytorch
-    #pip install torch==1.10.1+cu113 -f https://download.pytorch.org/whl/torch_stable.html
-    pip install torch==1.10.1 --extra-index-url https://download.pytorch.org/whl/cu113
+    # Pytorch
+    pip install torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0 -f https://download.pytorch.org/whl/torch_stable.html
     # Pytorch3d
-    pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1101/download.html
+    pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+
     # GradSLAM
-    pip install 'git+https://github.com/gradslam/gradslam.git'
+    # pip install 'git+https://github.com/gradslam/gradslam.git'
+    cd /tmp && git clone https://github.com/krrish94/chamferdist.git
+    cd /tmp/chamferdist && pip install .
+    cd /tmp && git clone https://github.com/gradslam/gradslam.git
+    cd /tmp/gradslam && pip install -e .[dev]
+    
     ln -s /usr/bin/python3 /usr/bin/python
-
-    # Build ROS workspace
-    ws=/opt/ros/depthcorr_ws
-    mkdir -p "${ws}/src/"
-    cd "${ws}/src"
-    git clone https://github.com/RuslanAgishev/supervised_depth_correction.git
-    cd "${ws}"
-    njobs=`grep ^cpu\\\\scores /proc/cpuinfo | uniq | awk '{print $4}'`
-    catkin init
-    catkin config --extend /opt/ros/noetic
-    catkin build -c -j $njobs
-
-%runscript
-    echo "Running demo example on bag file"
-    /bin/bash -c "source /opt/ros/noetic/setup.bash && \
-                  source /opt/ros/depthcorr_ws/devel/setup.bash --extend && \
-                  roslaunch supervised_depth_correction demo.launch rviz:=0"

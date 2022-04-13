@@ -1,15 +1,16 @@
+import os
+import time
+import torch
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.models import SparseConvNet
-
-import torch
-import pytorch3d
 import open3d as o3d
 import numpy as np
 import matplotlib.pyplot as plt
-import cv2
+import pytorch3d
 from pytorch3d.loss import chamfer_distance
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
+from chamferdist import ChamferDistance
 
 
 """
@@ -19,7 +20,7 @@ training is dome only on single image for simplicity
 
 
 # -------------- declare global parameters -------------- #
-CUDA_DEVICE = 3
+CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 
 BATCH_SIZE = 1
@@ -27,6 +28,7 @@ NUM_EPISODES = 200
 LR = 0.001
 WEIGHT_DECAY = 0.01
 EPISODES = 150
+VISUALIZE = False
 
 SUBSEQ = "2011_09_26_drive_0001_sync"
 USE_DEPTH_SELECTION = False
@@ -44,6 +46,9 @@ def train():
     model = model.to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     loss_training = []
+    log_dir = f'./results/depth_completion_gradslam_{time.time()}'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     print("###### Starting training ... ######")
 
     ################# learning loop #################
@@ -85,7 +90,7 @@ def train():
 
         # result visualization
         if episode == EPISODES or episode % (EPISODES // 4) == 0:
-            torch.save(model.state_dict(), f"results/weights-{episode}.pth")
+            torch.save(model.state_dict(), os.path.join(log_dir, f"weights-{episode}.pth"))
 
             # convert depth into np images
             depth_img_gt_np = depth_img_gt.detach().cpu().numpy().squeeze()
@@ -105,23 +110,25 @@ def train():
             ax.set_title('Prediction')
             fig.tight_layout(h_pad=1)
             # save plot
-            plt.savefig(f'results/plot{episode}.png')
-            # show plot
-            plt.show()
+            plt.savefig(os.path.join(log_dir, f'plot-{episode}.png'))
+            if VISUALIZE:
+                # show plot
+                plt.show()
     # END learning loop
 
     # plot training loss over episodes
     x_ax = [i for i in range(len(loss_training))]
-    y_ax = loss_training
+    y_ax = [loss.detach().cpu().numpy() for loss in loss_training]
     plt.plot(x_ax, y_ax)
     plt.xlabel('Episode')
     plt.ylabel('Training loss')
     plt.title('Loss over episodes')
-    plt.savefig(f'results/Training_loss.png')
-    plt.show()
+    plt.savefig(os.path.join(log_dir, 'Training_loss.png'))
+    if VISUALIZE:
+        plt.show()
 
 
-def chamfer_loss(pointclouds, pointclouds_gt):
+def chamfer_loss(pointclouds, pointclouds_gt, py3d=False):
     """
     pointclouds, pointclouds_gt: <gradslam.structures.pointclouds>
     computes chamfer distance between two pointclouds
@@ -129,10 +136,14 @@ def chamfer_loss(pointclouds, pointclouds_gt):
     """
     pcd = pointclouds.points_list[0]  # get pointcloud as torch tensor and transform into correct shape
     pcd_gt = pointclouds_gt.points_list[0]
-    pc = pytorch3d.structures.Pointclouds([pcd])
-    pc_gt = pytorch3d.structures.Pointclouds([pcd_gt])
-    # return chamfer_distance(pc.to(torch.device(DEVICE)), pc_gt.to(torch.device(DEVICE)))[0]
-    cd = chamfer_distance(pc, pc_gt)[0]
+    if py3d:
+        pc = pytorch3d.structures.Pointclouds([pcd])
+        pc_gt = pytorch3d.structures.Pointclouds([pcd_gt])
+        # return chamfer_distance(pc.to(torch.device(DEVICE)), pc_gt.to(torch.device(DEVICE)))[0]
+        cd = chamfer_distance(pc, pc_gt)[0]
+    else:
+        chamferDist = ChamferDistance()
+        cd = chamferDist(pcd_gt[None], pcd[None], bidirectional=True)
     return cd
 
 

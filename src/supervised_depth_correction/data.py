@@ -332,10 +332,7 @@ class Dataset:
                   intrinsics: torch.Tensor (B x N x 4 x 4)
                   poses: torch.Tensor (B x N x 4 x 4)
         """
-        if not i in self.ids:
-            item = self.ids[i]
-        else:
-            item = i
+        item = i if i in self.ids else self.ids[i]
         assert item in self.ids
         colors, depths, K = self.ds_depths[item]
         # for p1, p2 in zip(self.poses, self.ds_poses.poses):
@@ -408,9 +405,9 @@ def gradslam_demo():
     import open3d as o3d
 
     # constructs global map using gradslam, visualizes resulting pointcloud
-    subseq = "2011_09_26_drive_0001_sync"
-    # subseq = "2011_09_26_drive_0005_sync"
-    # subseq = "2011_09_26_drive_0023_sync"
+    # subseq = "2011_09_26_drive_0001_sync"
+    # subseq = "2011_09_26_drive_0009_sync"
+    subseq = "2011_09_26_drive_0011_sync"
 
     ds = Dataset(subseq, gt=False)
     device = torch.device('cpu')
@@ -437,9 +434,9 @@ def gradslam_demo():
 def depth_demo():
     import open3d as o3d
 
-    # subseq = "2011_09_26_drive_0002_sync"
+    # subseq = "2011_09_26_drive_0009_sync"
     subseq = "2011_09_26_drive_0001_sync"
-    # subseq = "2011_09_26_drive_0023_sync"
+    # subseq = "2011_09_26_drive_0011_sync"
 
     ds = Dataset(subseq=subseq)
 
@@ -533,7 +530,7 @@ def main():
     # ts_demo()
     gradslam_demo()
     # pykitti_demo()
-    depth_demo()
+    # depth_demo()
 
 
 if __name__ == '__main__':
