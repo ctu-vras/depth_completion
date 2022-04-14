@@ -27,5 +27,5 @@
 
     <!-- RVIZ -->
     <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"
-          args="-d $(find supervised_depth_correction)/rviz/config.rviz"/>
+          args="-d $(find supervised_depth_correction)/config/rviz/config.rviz"/>
 </launch>

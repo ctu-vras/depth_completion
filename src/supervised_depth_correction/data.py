@@ -3,13 +3,11 @@ import os
 import glob
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.spatial.transform import Rotation
-from scipy.spatial.transform import Slerp
 from tqdm import tqdm
-import datetime
 import torch
 from PIL import Image
 import pykitti
+from supervised_depth_correction.io import write, append
 
 
 # RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
@@ -328,44 +326,15 @@ def ts_demo():
     plt.show()
 
 
-def gradslam_demo():
-    from gradslam import Pointclouds, RGBDImages
-    from gradslam.slam import PointFusion
-    import open3d as o3d
-
-    # constructs global map using gradslam, visualizes resulting pointcloud
-    # subseq = "2011_09_26_drive_0001_sync"
-    subseq = "2011_09_26_drive_0009_sync"
-    # subseq = "2011_09_26_drive_0011_sync"
-
-    ds = Dataset(subseq, gt=False)
-    device = torch.device('cpu')
-
-    # create global map
-    slam = PointFusion(device=device, odom="gt", dsratio=1)
-    prev_frame = None
-    pointclouds = Pointclouds(device=device)
-
-    for i in ds.ids[::5]:
-        colors, depths, intrinsics, poses = ds[i]
-
-        live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)
-        pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
-
-        prev_frame = live_frame
-
-    # visualize using open3d
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].cpu().detach().numpy())
-    o3d.visualization.draw_geometries([pcd])
-
-
 def depth_demo():
     import open3d as o3d
 
-    subseq = "2011_09_26_drive_0009_sync"
-    # subseq = "2011_09_26_drive_0001_sync"
-    # subseq = "2011_09_26_drive_0011_sync"
+    subseqs = [
+        "2011_09_26_drive_0001_sync",
+        "2011_09_26_drive_0009_sync",
+        "2011_09_26_drive_0011_sync"
+    ]
+    subseq = np.random.choice(subseqs, 1)[0]
 
     ds = Dataset(subseq=subseq)
 
@@ -384,7 +353,7 @@ def depth_demo():
 
     global_map = list()
     # using poses convert pcs to one coord frame, create and visualize map
-    for i in ds.ids[::5]:
+    for i in tqdm(ds.ids[::2]):
         rgb_img_raw, depth_img_raw, K, pose = ds[i]
 
         rgb_img_raw = np.asarray(rgb_img_raw.cpu().numpy().squeeze(), dtype=np.uint8)
@@ -402,18 +371,57 @@ def depth_demo():
         intrinsic = o3d.camera.PinholeCameraIntrinsic(width=w, height=h,
                                                       fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2])
 
-        # pcd = o3d.geometry.PointCloud.create_from_rgbd_image(image=rgbd_img, intrinsic=intrinsic)
-        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth=depth_img, intrinsic=intrinsic)
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(image=rgbd_img, intrinsic=intrinsic)
+        # pcd = o3d.geometry.PointCloud.create_from_depth_image(depth=depth_img, intrinsic=intrinsic)
 
         pcd.transform(pose)
-
-        # Flip it, otherwise the pointcloud will be upside down
-        # pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-        # o3d.visualization.draw_geometries([pcd])
 
         global_map.append(pcd)
 
     o3d.visualization.draw_geometries(global_map)
+
+
+def gradslam_demo():
+    from gradslam import Pointclouds, RGBDImages
+    from gradslam.slam import PointFusion
+    import open3d as o3d
+
+    # constructs global map using gradslam
+    subseqs = [
+               "2011_09_26_drive_0001_sync",
+               "2011_09_26_drive_0009_sync",
+               "2011_09_26_drive_0011_sync"
+               ]
+    np.random.seed(135)
+    subseq = np.random.choice(subseqs, 1)[0]
+
+    ds = Dataset(subseq, gt=True)
+    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+    pose_provider = 'gradicp'
+    assert pose_provider == 'gt' or pose_provider == 'icp' or pose_provider == 'gradicp'
+
+    # create global map
+    slam = PointFusion(device=device, odom=pose_provider, dsratio=1)
+    prev_frame = None
+    pointclouds = Pointclouds(device=device)
+
+    for i in tqdm(ds.ids[::1]):
+        colors, depths, intrinsics, poses = ds[i]
+
+        live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)
+        pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
+
+        prev_frame = live_frame
+
+        # write slam poses
+        slam_pose = live_frame.poses.detach().squeeze()
+        append(os.path.join(os.path.dirname(__file__), '..', '..', 'config/results/', 'slam_poses.txt'),
+               ', '.join(['%.6f' % x for x in slam_pose.flatten()]) + '\n')
+
+    # visualize using open3d
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].detach().cpu().numpy()[::10, :])
+    o3d.visualization.draw_geometries([pcd])
 
 
 def main():
