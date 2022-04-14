@@ -9,6 +9,7 @@ from tqdm import tqdm
 import datetime
 import torch
 from PIL import Image
+import pykitti
 
 
 # RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
@@ -38,106 +39,25 @@ class KITTIRaw(object):
         if path is None:
             seq = subseq[:10]
             path = os.path.join(RAW_DATA_DIR, seq)
-        self.path = path
-        self.subseq = subseq
-        self.gps2cam_transform = self.get_imu2cam_transform()
+
+        self.data = pykitti.raw(RAW_DATA_DIR, date=subseq[:10], drive=subseq[-9:-5])
         self.poses = self.get_cam_poses()
-        self.ts = self.get_timestamps(sensor='gps')
+        self.ts = self.get_timestamps()
         self.ids = range(len(self.ts))
 
-    @staticmethod
-    def gps_to_ecef(lat, lon, alt, zero_origin=False):
-        # https://gis.stackexchange.com/questions/230160/converting-wgs84-to-ecef-in-python
-        rad_lat = lat * (np.pi / 180.0)
-        rad_lon = lon * (np.pi / 180.0)
-
-        a = 6378137.0
-        finv = 298.257223563
-        f = 1 / finv
-        e2 = 1 - (1 - f) * (1 - f)
-        v = a / np.sqrt(1 - e2 * np.sin(rad_lat) * np.sin(rad_lat))
-
-        x = (v + alt) * np.cos(rad_lat) * np.cos(rad_lon)
-        y = (v + alt) * np.cos(rad_lat) * np.sin(rad_lon)
-        # TODO: check why height from latitude is too high
-        # z = (v * (1 - e2) + alt) * np.sin(rad_lat)
-        z = alt
-
-        if zero_origin:
-            x, y, z = x - x[0], y - y[0], z - z[0]
-        return x, y, z
-
-    def get_gps_pose(self, fname):
-        assert isinstance(fname, str)
-        gps_data = np.genfromtxt(fname)
-        lat, lon, alt = gps_data[:3]
-        roll, pitch, yaw = gps_data[3:6]
-        R = Rotation.from_euler('xyz', [roll, pitch, yaw], degrees=False).as_matrix()
-        x, y, z = self.gps_to_ecef(lat, lon, alt)
-        # convert to 4x4 matrix
-        pose = np.eye(4)
-        pose[:3, :3] = R
-        pose[:3, 3] = np.array([x, y, z])
-        return pose
-
     def get_cam_poses(self, zero_origin=False):
-        poses = []
-        for fname in np.sort(glob.glob(os.path.join(self.path, self.subseq, 'oxts/data/*.txt'))):
-            pose = self.get_gps_pose(fname)
-            poses.append(pose)
-        poses = np.asarray(poses)
-
-        # TODO: now we have Tr(gps -> cam0), we need Tr(gps->cam2 or cam3)
-        poses = np.matmul(poses, self.gps2cam_transform[None])
-
+        # poses of GPS in world frame
+        poses = np.asarray([o.T_w_imu for o in self.data.oxts])
+        # we need poses of camera (2: left or 3: right) in world frame
+        poses = np.matmul(poses, np.linalg.inv(self.data.calib.T_cam2_imu[None]))
         if zero_origin:
             # move poses to 0 origin:
             Tr_inv = np.linalg.inv(poses[0])
             poses = np.asarray([np.matmul(Tr_inv, pose) for pose in poses])
-
         return poses
 
-    def get_imu2cam_transform(self):
-        # Load calibration matrices
-        TrImuToVelo = self.get_transform("calib_imu_to_velo.txt")
-        TrVeloToCam = self.get_transform("calib_velo_to_cam.txt")
-        TrImuToCam0 = np.matmul(TrImuToVelo, TrVeloToCam)
-        return np.asarray(TrImuToCam0)
-
-    def get_transform(self, file):
-        """Read calibration from file.
-            :param str file: File name.
-            :return numpy.matrix: Calibration.
-            """
-        fpath = os.path.join(self.path, file)
-        with open(fpath, 'r') as f:
-            s = f.read()
-        i_r = s.index('R:')
-        i_t = s.index('T:')
-        i_t_end = i_t+2 + s[i_t+2:].index('\n')
-        rotation = np.mat(s[i_r + 2:i_t], dtype=np.float64).reshape((3, 3))
-        translation = np.mat(s[i_t + 2:i_t_end], dtype=np.float64).reshape((3, 1))
-        transform = np.bmat([[rotation, translation], [[[0, 0, 0, 1]]]])
-        assert transform.shape == (4, 4)
-        return transform
-
-    def get_timestamps(self, sensor='gps', zero_origin=False):
-        assert isinstance(sensor, str)
-        assert sensor == 'gps' or sensor == 'lidar'
-        if sensor == 'gps':
-            sensor_folder = 'oxts'
-        elif sensor == 'lidar':
-            sensor_folder = 'velodyne_points'
-        else:
-            raise ValueError
-        timestamps = []
-        ts = np.genfromtxt(os.path.join(self.path, self.subseq, sensor_folder, 'timestamps.txt'), dtype=str)
-        for t in ts:
-            date = t[0]
-            day_time, sec = t[1].split(".")
-            sec = float('0.' + sec)
-            stamp = datetime.datetime.strptime("%s_%s" % (date, day_time), "%Y-%m-%d_%H:%M:%S").timestamp() + sec
-            timestamps.append(stamp)
+    def get_timestamps(self, zero_origin=False):
+        timestamps = [t.timestamp() for t in self.data.timestamps]
         if zero_origin:
             timestamps = [t - timestamps[0] for t in timestamps]
         return timestamps
@@ -147,18 +67,29 @@ class KITTIRaw(object):
             :param int cam_id: Camera id: 0, 1, 2, 3.
             :return numpy.matrix: Intrinsics matrix.
         """
-        fpath = os.path.join(self.path, "calib_cam_to_cam.txt")
-        with open(fpath, 'r') as f:
-            s = f.read()
-        i_K_start = s.index('K_%02d:' % cam_id)
-        i_K_end = i_K_start + 5 + s[i_K_start + 5:].index('\n')
-        K = np.mat(s[i_K_start + 5:i_K_end], dtype=np.float64).reshape((3, 3))
+        if cam_id == 0:
+            K = self.data.calib.K_cam0
+        elif cam_id == 1:
+            K = self.data.calib.K_cam1
+        elif cam_id == 2:
+            K = self.data.calib.K_cam2
+        elif cam_id == 3:
+            K = self.data.calib.K_cam3
+        else:
+            raise ValueError('Not supported camera id')
         return K
 
     def get_rgb(self, i, image="image_02"):
-        file = os.path.join(self.path, self.subseq, image, "data/%010d.png" % i)
-        rgb = np.asarray(Image.open(file))
-        return rgb
+        # file = os.path.join(self.path, self.subseq, image, "data/%010d.png" % i)
+        # rgb = np.asarray(Image.open(file))
+        left, right = self.data.get_rgb(i)
+        if image == "image_02":
+            rgb = left
+        elif image == "image_03":
+            rgb = right
+        else:
+            raise ValueError("Not support camera index (should be image_02 or image_03 for left or right camera)")
+        return np.asarray(rgb)
 
     def __len__(self):
         return len(self.ids)
@@ -313,8 +244,8 @@ class Dataset:
         self.ids = self.ds_depths.ids
 
         # move poses to origin to 0:
-        # Tr_inv = np.linalg.inv(self.poses[0])
-        # self.poses = np.asarray([np.matmul(Tr_inv, pose) for pose in self.poses])
+        Tr_inv = np.linalg.inv(self.poses[0])
+        self.poses = np.asarray([np.matmul(Tr_inv, pose) for pose in self.poses])
 
     def __len__(self):
         return len(self.ids)
@@ -348,7 +279,7 @@ class Dataset:
 
 
 def poses_demo():
-    np.random.seed(135)
+    # np.random.seed(135)
     seq = np.random.choice(sequence_names)
     while True:
         subseq = np.random.choice(os.listdir(os.path.join(RAW_DATA_DIR, seq)))
@@ -378,7 +309,7 @@ def poses_demo():
 
 
 def ts_demo():
-    np.random.seed(135)
+    # np.random.seed(135)
     seq = np.random.choice(sequence_names)
     while True:
         subseq = np.random.choice(os.listdir(os.path.join(RAW_DATA_DIR, seq)))
@@ -387,13 +318,11 @@ def ts_demo():
 
     ds = KITTIRaw(subseq=subseq)
 
-    ts_gps = ds.get_timestamps(sensor='gps', zero_origin=True)
-    ts_velo = ds.get_timestamps(sensor='lidar', zero_origin=True)
+    ts_gps = ds.get_timestamps(zero_origin=True)
 
     plt.figure()
     plt.title("%s" % subseq)
     plt.plot(ts_gps[::5], '.', label='gps')
-    plt.plot(ts_velo[::5], '.', label='lidar')
     plt.legend()
     plt.grid()
     plt.show()
@@ -406,8 +335,8 @@ def gradslam_demo():
 
     # constructs global map using gradslam, visualizes resulting pointcloud
     # subseq = "2011_09_26_drive_0001_sync"
-    # subseq = "2011_09_26_drive_0009_sync"
-    subseq = "2011_09_26_drive_0011_sync"
+    subseq = "2011_09_26_drive_0009_sync"
+    # subseq = "2011_09_26_drive_0011_sync"
 
     ds = Dataset(subseq, gt=False)
     device = torch.device('cpu')
@@ -434,8 +363,8 @@ def gradslam_demo():
 def depth_demo():
     import open3d as o3d
 
-    # subseq = "2011_09_26_drive_0009_sync"
-    subseq = "2011_09_26_drive_0001_sync"
+    subseq = "2011_09_26_drive_0009_sync"
+    # subseq = "2011_09_26_drive_0001_sync"
     # subseq = "2011_09_26_drive_0011_sync"
 
     ds = Dataset(subseq=subseq)
@@ -487,49 +416,12 @@ def depth_demo():
     o3d.visualization.draw_geometries(global_map)
 
 
-def pykitti_demo():
-    import pykitti
-
-    # subseq = "2011_09_26_drive_0002_sync"
-    seq = "2011_09_26"
-    drive = subseq = "0002"
-
-    # The 'frames' argument is optional - default: None, which loads the whole dataset.
-    # Calibration, timestamps, and IMU data are read automatically.
-    # Camera and velodyne data are available via properties that create generators
-    # when accessed, or through getter methods that provide random access.
-    data = pykitti.raw(RAW_DATA_DIR, seq, drive, frames=range(0, 50, 5))
-
-    # dataset.calib:         Calibration data are accessible as a named tuple
-    # dataset.timestamps:    Timestamps are parsed into a list of datetime objects
-    # dataset.oxts:          List of OXTS packets and 6-dof poses as named tuples
-    # dataset.camN:          Returns a generator that loads individual images from camera N
-    # dataset.get_camN(idx): Returns the image from camera N at idx
-    # dataset.gray:          Returns a generator that loads monochrome stereo pairs (cam0, cam1)
-    # dataset.get_gray(idx): Returns the monochrome stereo pair at idx
-    # dataset.rgb:           Returns a generator that loads RGB stereo pairs (cam2, cam3)
-    # dataset.get_rgb(idx):  Returns the RGB stereo pair at idx
-    # dataset.velo:          Returns a generator that loads velodyne scans as [x,y,z,reflectance]
-    # dataset.get_velo(idx): Returns the velodyne scan at idx
-
-    point_velo = np.array([0, 0, 0, 1])
-    point_cam0 = data.calib.T_cam0_velo.dot(point_velo)
-
-    point_imu = np.array([0, 0, 0, 1])
-    point_w = [o.T_w_imu.dot(point_imu) for o in data.oxts]
-
-    for cam0_image in data.cam0:
-        # do something
-        pass
-
-    cam2_image, cam3_image = data.get_rgb(3)
-
-
 def main():
-    # poses_demo()
-    # ts_demo()
+    # for _ in range(6):
+    #     poses_demo()
+    # for _ in range(5):
+    #     ts_demo()
     gradslam_demo()
-    # pykitti_demo()
     # depth_demo()
 
 
