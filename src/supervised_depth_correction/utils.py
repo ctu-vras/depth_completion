@@ -1,6 +1,7 @@
 import gradslam
 import open3d as o3d
 import matplotlib.pyplot as plt
+import torch
 
 
 def plot_depth(depth_sparse, depth_pred, depth_gt):
@@ -24,13 +25,18 @@ def plot_depth(depth_sparse, depth_pred, depth_gt):
     plt.show()
 
 
-def plot_pc(pcd):
+def plot_pc(pc):
     """
     Args:
-        pcd: <gradslam.Pointclouds>
+        pc: <gradslam.Pointclouds>
     """
-    if isinstance(pcd, gradslam.Pointclouds):
-        pcd = pcd.open3d(0)
+    if isinstance(pc, gradslam.Pointclouds):
+        pcd = pc.open3d(0)
+    elif isinstance(pc, torch.Tensor):
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc.detach().cpu().view(-1, 3))
+    else:
+        raise ValueError('Input should be gradslam.Pointclouds or torch.Tensor')
     # Flip it, otherwise the point cloud will be upside down
     pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
     o3d.visualization.draw_geometries([pcd])

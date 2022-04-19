@@ -207,7 +207,7 @@ class GradslamROS:
 
 
 if __name__ == '__main__':
-    rospy.init_node('gradslam_ros', log_level=rospy.INFO)
+    rospy.init_node('gradslam_ros', log_level=rospy.DEBUG)
     odometry = rospy.get_param('~odometry')  # gt, icp, gradicp
     proc = GradslamROS(odometry=odometry)
     try:

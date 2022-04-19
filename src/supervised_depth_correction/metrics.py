@@ -4,19 +4,21 @@ from chamferdist import ChamferDistance
 from .transform import *
 
 
-def chamfer_loss(pointclouds, pointclouds_gt, py3d=True):
+def chamfer_loss(pointclouds, pointclouds_gt, sample_step=1):
     """
     pointclouds, pointclouds_gt: <gradslam.structures.pointclouds>
     computes chamfer distance between two pointclouds
     :return: <torch.tensor>
     """
-    pcd = pointclouds.points_list[0]  # get pointcloud as torch tensor and transform into correct shape
+    pcd = pointclouds.points_list[0]  # get point cloud as torch tensor and transform into correct shape
     pcd_gt = pointclouds_gt.points_list[0]
-    if py3d:
-        cd = chamfer_distance(torch.unsqueeze(pcd, 0), torch.unsqueeze(pcd_gt, 0))[0]
-    else:
-        chamferDist = ChamferDistance()
-        cd = chamferDist(pcd_gt[None], pcd[None], bidirectional=True)
+    if sample_step > 1:
+        # randomly unifromly sample pts from clouds with step equal to sample_step
+        pcd = pcd[torch.randint(pcd.shape[0], (pcd.shape[0]//sample_step,)), :]
+        pcd_gt = pcd_gt[torch.randint(pcd_gt.shape[0], (pcd_gt.shape[0] // sample_step,)), :]
+    cd = chamfer_distance(pcd[None], pcd_gt[None])[0]
+    # chamferDist = ChamferDistance()
+    # cd = chamferDist(pcd_gt[None], pcd[None], bidirectional=True)
     return cd
 
 

@@ -4,13 +4,10 @@ import torch
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.models import SparseConvNet
 import matplotlib.pyplot as plt
-import pytorch3d
-from pytorch3d.loss import chamfer_distance
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
-from chamferdist import ChamferDistance
 from supervised_depth_correction.utils import plot_pc
-
+from supervised_depth_correction.metrics import chamfer_loss
 """
 Demo to show that gradient are propagated through SLAM pipeline with KITTI dataset
 training is dome only on single image for simplicity
@@ -74,7 +71,7 @@ def train():
 
         # do backward pass
         optimizer.zero_grad()
-        loss = chamfer_loss(pointclouds, pointclouds_gt)
+        loss = chamfer_loss(pointclouds, pointclouds_gt, sample_step=5)
         loss.backward()
         optimizer.step()
         loss_episode.append(loss)
@@ -125,25 +122,6 @@ def train():
     plt.savefig(os.path.join(LOG_DIR, 'Training_loss.png'))
     if VISUALIZE:
         plt.show()
-
-
-def chamfer_loss(pointclouds, pointclouds_gt, py3d=False):
-    """
-    pointclouds, pointclouds_gt: <gradslam.structures.pointclouds>
-    computes chamfer distance between two pointclouds
-    :return: <torch.tensor>
-    """
-    pcd = pointclouds.points_list[0]  # get pointcloud as torch tensor and transform into correct shape
-    pcd_gt = pointclouds_gt.points_list[0]
-    if py3d:
-        pc = pytorch3d.structures.Pointclouds([pcd])
-        pc_gt = pytorch3d.structures.Pointclouds([pcd_gt])
-        # return chamfer_distance(pc.to(torch.device(DEVICE)), pc_gt.to(torch.device(DEVICE)))[0]
-        cd = chamfer_distance(pc, pc_gt)[0]
-    else:
-        chamferDist = ChamferDistance()
-        cd = chamferDist(pcd_gt[None], pcd[None], bidirectional=True)
-    return cd
 
 
 def main():

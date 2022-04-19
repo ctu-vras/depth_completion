@@ -31,13 +31,13 @@ INIT_MODEL_STATE_DICT = os.path.join(os.path.dirname(__file__), 'weights.pth')
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
-def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=5, step=1):
+def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=6, step=1):
     slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=1)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
     trajectory = []
 
-    # TODO: check memory issue (sample global map before loss computation)
+    # TODO: check memory issue
     for i in ds.ids[:max_clouds:step]:
         colors, depths, intrinsics, poses = ds[i]
 
@@ -160,11 +160,10 @@ def train(subseqs):
 
     for episode in range(EPISODES + 1):
         global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=model)
-        # global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=None)
 
         # do backward pass
         optimizer.zero_grad()
-        loss = chamfer_loss(global_map_episode, global_map_gt)
+        loss = chamfer_loss(global_map_episode, global_map_gt, sample_step=5)
         loss.backward()
         optimizer.step()
 
@@ -178,7 +177,7 @@ def train(subseqs):
         mae_training.append(mae.detach())
 
         # running results save
-        if episode == EPISODES or episode % (EPISODES // 4) == 0:
+        if episode == EPISODES or episode % (EPISODES // 2) == 0:
             torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
             plot_pc(global_map_episode, episode, "training")
             plot_depth(depth_sample_sparse, depth_sample_pred, depth_sample_gt, "training", episode)
@@ -211,7 +210,7 @@ def test(subseqs, model):
         global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse)
         plot_pc(global_map_gt, "sparse", f"testing-{subseq}")
 
-        global_map_pred, traj_pred, depth_sample_pred = construct_map(dataset_sparse, model)
+        global_map_pred, traj_pred, depth_sample_pred = construct_map(dataset_sparse, model, pose_provider='icp')
         plot_pc(global_map_pred, "pred", f"testing-{subseq}")
 
         print("###### Running testing ######")
@@ -229,7 +228,7 @@ def test(subseqs, model):
         print("###### ALL DONE ######")
 
 
-def main(file=None):
+def main():
     train_subseq = ["2011_09_26_drive_0001_sync"]
     test_subseqs = ["2011_09_28_drive_0191_sync"]
     assert not any(x in test_subseqs for x in train_subseq)
