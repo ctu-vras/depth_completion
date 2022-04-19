@@ -2,9 +2,10 @@ import gradslam
 import open3d as o3d
 import matplotlib.pyplot as plt
 import torch
+import os
 
 
-def plot_depth(depth_sparse, depth_pred, depth_gt):
+def plot_depth(depth_sparse, depth_pred, depth_gt, episode, mode, visualize=False, log_dir=None):
     # convert depth into np images
     depth_img_gt_np = depth_gt.detach().cpu().numpy().squeeze()
     depth_img_sparse_np = depth_sparse.detach().cpu().numpy().squeeze()
@@ -22,13 +23,16 @@ def plot_depth(depth_sparse, depth_pred, depth_gt):
     plt.imshow(depth_img_gt_np)
     ax.set_title('Ground truth')
     fig.tight_layout(h_pad=1)
-    plt.show()
+    if log_dir is not None:
+        plt.savefig(os.path.join(log_dir, f'plot-{mode}-{episode}.png'))
+    if visualize:
+        plt.show()
 
 
-def plot_pc(pc):
+def plot_pc(pc, episode, mode, visualize=False, log_dir=None):
     """
     Args:
-        pc: <gradslam.Pointclouds>
+        pc: <gradslam.Pointclouds> or <torch.Tensor>
     """
     if isinstance(pc, gradslam.Pointclouds):
         pcd = pc.open3d(0)
@@ -39,10 +43,13 @@ def plot_pc(pc):
         raise ValueError('Input should be gradslam.Pointclouds or torch.Tensor')
     # Flip it, otherwise the point cloud will be upside down
     pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-    o3d.visualization.draw_geometries([pcd])
+    if log_dir is not None:
+        o3d.io.write_point_cloud(os.path.join(log_dir, f'map-{mode}-{episode}.pcd'), pcd)
+    if visualize:
+        o3d.visualization.draw_geometries([pcd])
 
 
-def plot_metric(metric, metric_title):
+def plot_metric(metric, metric_title, episode, mode, visualize=False, log_dir=None):
     """
     Plots graph of metric over episodes
     Args:
@@ -55,4 +62,7 @@ def plot_metric(metric, metric_title):
     plt.xlabel('Episode')
     plt.ylabel(metric_title)
     plt.title(f'{metric_title} over episodes')
-    plt.show()
+    if log_dir is not None:
+        plt.savefig(os.path.join(log_dir, f'{metric_title}.png'))
+    if visualize:
+        plt.show()

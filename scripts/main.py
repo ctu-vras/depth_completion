@@ -1,8 +1,6 @@
 import os
 import time
 import torch
-import open3d as o3d
-import matplotlib.pyplot as plt
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 # from tqdm import tqdm
@@ -11,6 +9,7 @@ from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.io import write, append
 from supervised_depth_correction.models import SparseConvNet
 from supervised_depth_correction.metrics import MSE, MAE, chamfer_loss, localization_accuracy
+from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric
 
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
@@ -60,66 +59,11 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=6, step=1):
     return pointclouds, trajectory, depths
 
 
-def plot_depth(depth_sparse, depth_pred, depth_gt, episode, mode):
-    # convert depth into np images
-    depth_img_gt_np = depth_gt.detach().cpu().numpy().squeeze()
-    depth_img_sparse_np = depth_sparse.detach().cpu().numpy().squeeze()
-    pred_np = depth_pred.detach().cpu().numpy().squeeze()
-
-    # plot images
-    fig = plt.figure()
-    ax = fig.add_subplot(3, 1, 1)
-    plt.imshow(depth_img_sparse_np)
-    ax.set_title('Sparse')
-    ax = fig.add_subplot(3, 1, 2)
-    plt.imshow(pred_np)
-    ax.set_title('Prediction')
-    ax = fig.add_subplot(3, 1, 3)
-    plt.imshow(depth_img_gt_np)
-    ax.set_title('Ground truth')
-    fig.tight_layout(h_pad=1)
-    # save plot
-    plt.savefig(os.path.join(LOG_DIR, f'plot-{mode}-{episode}.png'))
-    if VISUALIZE:
-        plt.show()
-
-
-def plot_pc(pc, episode, mode):
-    """
-    Args:
-        pc: <gradslam.Pointclouds>
-    """
-    pc_o3d = pc.open3d(0)
-    if VISUALIZE:
-        # Flip it, otherwise the pointcloud will be upside down
-        pc_o3d.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-        o3d.visualization.draw_geometries([pc_o3d])
-    o3d.io.write_point_cloud(os.path.join(LOG_DIR, f'map-{mode}-{episode}.pcd'), pc_o3d)
-
-
 def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
     mse = MSE(depth_gt, depth_pred)
     mae = MAE(depth_gt, depth_pred)
     loc_acc = localization_accuracy(traj_gt, traj_pred)
     return mse, mae, loc_acc
-
-
-def plot_metric(metric, metric_title):
-    """
-    Plots graph of metric over episodes
-    Args:
-        metric: list of <torch.tensor>
-        metric_title: string
-    """
-    x_ax = [i for i in range(len(metric))]
-    y_ax = [loss.detach().cpu().numpy() for loss in metric]
-    plt.plot(x_ax, y_ax)
-    plt.xlabel('Episode')
-    plt.ylabel(metric_title)
-    plt.title(f'{metric_title} over episodes')
-    plt.savefig(os.path.join(LOG_DIR, f'{metric_title}.png'))
-    if VISUALIZE:
-        plt.show()
 
 
 def load_model(path=None):
@@ -154,8 +98,8 @@ def train(subseqs):
     # create gt global map
     global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt)
     global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse)
-    # plot_pc(global_map_gt, "gt_dense", "training")
-    plot_pc(global_map_sparse, "gt_sparse", "training")
+    plot_pc(global_map_gt, "gt_dense", "training", visualize=VISUALIZE, log_dir=LOG_DIR)
+    plot_pc(global_map_sparse, "gt_sparse", "training", visualize=VISUALIZE, log_dir=LOG_DIR)
     print("###### Running training loop ######")
 
     for episode in range(EPISODES + 1):
@@ -179,14 +123,14 @@ def train(subseqs):
         # running results save
         if episode == EPISODES or episode % (EPISODES // 2) == 0:
             torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
-            plot_pc(global_map_episode, episode, "training")
-            plot_depth(depth_sample_sparse, depth_sample_pred, depth_sample_gt, "training", episode)
+            plot_pc(global_map_episode, episode, "training", visualize=VISUALIZE, log_dir=LOG_DIR)
+            plot_depth(depth_sample_sparse, depth_sample_pred, depth_sample_gt, "training", episode, visualize=VISUALIZE, log_dir=LOG_DIR)
     # END learning loop
 
     # plot training metrics over episodes
-    plot_metric(loss_training, "Training loss")
-    plot_metric(mse_training, "MSE")
-    plot_metric(mae_training, "MAE")
+    plot_metric(loss_training, "Training loss", visualize=VISUALIZE, log_dir=LOG_DIR)
+    plot_metric(mse_training, "MSE", visualize=VISUALIZE, log_dir=LOG_DIR)
+    plot_metric(mae_training, "MAE", visualize=VISUALIZE, log_dir=LOG_DIR)
 
     return model
 
@@ -205,13 +149,13 @@ def test(subseqs, model):
         print("###### Constructing maps ######")
 
         global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt)
-        plot_pc(global_map_gt, "gt", f"testing-{subseq}")
+        plot_pc(global_map_gt, "gt", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
 
         global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse)
-        plot_pc(global_map_gt, "sparse", f"testing-{subseq}")
+        plot_pc(global_map_gt, "sparse", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
 
         global_map_pred, traj_pred, depth_sample_pred = construct_map(dataset_sparse, model, pose_provider='icp')
-        plot_pc(global_map_pred, "pred", f"testing-{subseq}")
+        plot_pc(global_map_pred, "pred", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
 
         print("###### Running testing ######")
 
@@ -240,4 +184,6 @@ if __name__ == '__main__':
     main()
     # TODO:
     #   make training over multiple subsequences
+    #   --> run on sequences sequentially
     #   Make separate singularity image for gradslam?
+    #   --> train on server with gt and test locally with gradicp
