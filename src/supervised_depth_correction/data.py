@@ -232,7 +232,7 @@ class KITTIDepthSelection(KITTIDepth):
 
 
 class Dataset:
-    def __init__(self, subseq, selection=False, gt=False):
+    def __init__(self, subseq, selection=False, gt=False, device=torch.device('cpu')):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
             self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt)
@@ -244,6 +244,7 @@ class Dataset:
         # move poses to origin to 0:
         Tr_inv = np.linalg.inv(self.poses[0])
         self.poses = np.asarray([np.matmul(Tr_inv, pose) for pose in self.poses])
+        self.device = device
 
     def __len__(self):
         return len(self.ids)
@@ -272,7 +273,7 @@ class Dataset:
         intrinsics[:3, :3] = K
 
         data = [colors, depths, intrinsics, poses]
-        data = [torch.as_tensor(d[None][None], dtype=torch.float32) for d in data]
+        data = [torch.as_tensor(d[None][None], dtype=torch.float32).to(self.device) for d in data]
         return data
 
 
@@ -392,12 +393,12 @@ def gradslam_demo():
                "2011_09_26_drive_0009_sync",
                "2011_09_26_drive_0011_sync"
                ]
-    np.random.seed(135)
+    # np.random.seed(135)
     subseq = np.random.choice(subseqs, 1)[0]
 
     ds = Dataset(subseq, gt=True)
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    pose_provider = 'gradicp'
+    pose_provider = 'gt'
     assert pose_provider == 'gt' or pose_provider == 'icp' or pose_provider == 'gradicp'
 
     # create global map
@@ -405,7 +406,7 @@ def gradslam_demo():
     prev_frame = None
     pointclouds = Pointclouds(device=device)
 
-    for i in tqdm(ds.ids[::1]):
+    for i in tqdm(ds.ids[::5]):
         colors, depths, intrinsics, poses = ds[i]
 
         live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)

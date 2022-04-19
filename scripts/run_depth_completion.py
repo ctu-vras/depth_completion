@@ -17,8 +17,9 @@ from supervised_depth_correction.metrics import MSE, MAE, chamfer_loss, localiza
 
 
 # ------------------------------------ GLOBAL PARAMATERS ------------------------------------ #
-CUDA_DEVICE = 3
+CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
+# DEVICE = torch.device('cpu')
 
 BATCH_SIZE = 1
 NUM_EPISODES = 200
@@ -40,17 +41,17 @@ def construct_map(ds, predictor=None, gt=False):
     pointclouds = Pointclouds(device=DEVICE)
     trajectory = []
 
-    for i in tqdm(ds.ids[::1]):
+    # TODO: check memory issue (sample global map before loss computation)
+    for i in tqdm(ds.ids[:3:1]):
         colors, depths, intrinsics, poses = ds[i]
 
         # do forward pass
         if predictor is not None:
-            depths = depths.to(DEVICE)
             mask = (depths > 0).float()
             pred = predictor(depths, mask)
-            depths = pred.detach().cpu()
+            depths = pred
 
-        live_frame = RGBDImages(colors, depths, intrinsics, poses).to(DEVICE)
+        live_frame = RGBDImages(colors, depths, intrinsics, poses)
         pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
         if gt:
             trajectory.append(poses)
@@ -134,8 +135,8 @@ def train(subseqs):
     subseq = subseqs[0]
     print("###### Starting training ######")
     print("###### Loading data ######")
-    dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True)
-    dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False)
+    dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True, device=DEVICE)
+    dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False, device=DEVICE)
     print("###### Data loaded ######")
 
     print("###### Setting up training environment ######")
@@ -161,16 +162,16 @@ def train(subseqs):
         # do backward pass
         optimizer.zero_grad()
         loss = chamfer_loss(global_map_episode, global_map_gt)
-        loss.backward(retain_graph=True)
+        loss.backward()
         optimizer.step()
 
         # print and append training metrics
-        loss_training.append(loss)
+        loss_training.append(loss.detach())
         print(f"EPISODE {episode}/{EPISODES}, loss: {loss}")
         mse, mae, locc_acc = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_epis, episode)
-        mse_training.append(mse)
-        mae_training.append(mae)
-        locc_acc_training.append(locc_acc)
+        mse_training.append(mse.detach())
+        mae_training.append(mae.detach())
+        locc_acc_training.append(locc_acc.detach())
 
         # running results save
         if episode == EPISODES or episode % (EPISODES // 4) == 0:
@@ -234,7 +235,6 @@ def main(training=True, file=None):
 if __name__ == '__main__':
     main()
     # TODO:
-    #   find out why gradient is not propagated
     #   make training over multiple subsequences
     #   make localization accuracy computation take into account rotation
     #   Make separate singularity image for gradslam?
