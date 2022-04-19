@@ -2,21 +2,18 @@ import os
 import time
 import torch
 import open3d as o3d
-import numpy as np
 import matplotlib.pyplot as plt
-import pytorch3d
-from pytorch3d.loss import chamfer_distance
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
-from tqdm import tqdm
-
+# from tqdm import tqdm
+# from torch.utils.data import DataLoader
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.io import write, append
 from supervised_depth_correction.models import SparseConvNet
 from supervised_depth_correction.metrics import MSE, MAE, chamfer_loss, localization_accuracy
 
 
-# ------------------------------------ GLOBAL PARAMATERS ------------------------------------ #
+# ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
 CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 # DEVICE = torch.device('cpu')
@@ -26,7 +23,7 @@ NUM_EPISODES = 200
 LR = 0.001
 WEIGHT_DECAY = 0.01
 
-EPISODES = 150
+EPISODES = 10
 VISUALIZE = False
 
 USE_DEPTH_SELECTION = False
@@ -42,7 +39,7 @@ def construct_map(ds, predictor=None, gt=False):
     trajectory = []
 
     # TODO: check memory issue (sample global map before loss computation)
-    for i in tqdm(ds.ids[:3:1]):
+    for i in ds.ids[:5:1]:
         colors, depths, intrinsics, poses = ds[i]
 
         # do forward pass
@@ -102,13 +99,10 @@ def plot_pc(pc, episode, mode):
     o3d.io.write_point_cloud(os.path.join(LOG_DIR, f'map-{mode}-{episode}.pcd'), pc_o3d)
 
 
-def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred, episode):
+def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
     mse = MSE(depth_gt, depth_pred)
     mae = MAE(depth_gt, depth_pred)
     loc_acc = localization_accuracy(traj_gt, traj_pred)
-    print(f"EPISODE {episode}/{EPISODES}, MSE: {mse}")
-    print(f"EPISODE {episode}/{EPISODES}, MAE: {mae}")
-    print(f"EPISODE {episode}/{EPISODES}, localization accuracy: {loc_acc}")
     return mse, mae, loc_acc
 
 
@@ -147,7 +141,6 @@ def train(subseqs):
     loss_training = []
     mse_training = []
     mae_training = []
-    locc_acc_training = []
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
     # create gt global map
@@ -168,10 +161,11 @@ def train(subseqs):
         # print and append training metrics
         loss_training.append(loss.detach())
         print(f"EPISODE {episode}/{EPISODES}, loss: {loss}")
-        mse, mae, locc_acc = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_epis, episode)
+        mse, mae, _ = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_epis)
+        print(f"EPISODE {episode}/{EPISODES}, MSE: {mse}")
+        print(f"EPISODE {episode}/{EPISODES}, MAE: {mae}")
         mse_training.append(mse.detach())
         mae_training.append(mae.detach())
-        locc_acc_training.append(locc_acc.detach())
 
         # running results save
         if episode == EPISODES or episode % (EPISODES // 4) == 0:
@@ -184,7 +178,6 @@ def train(subseqs):
     plot_metric(loss_training, "Training loss")
     plot_metric(mse_training, "MSE")
     plot_metric(mae_training, "MAE")
-    plot_metric(locc_acc_training, "Localization accuracy")
 
     return model
 
@@ -196,8 +189,8 @@ def test(subseqs, model, load_file=None):
     for subseq in subseqs:
         print(f"###### Starting testing of subseq: {subseq} ######")
         print("###### Loading data ######")
-        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True)
-        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False)
+        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True, device=DEVICE)
+        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False, device=DEVICE)
         print("###### Data loaded ######")
 
         print("###### Setting up model ######")
@@ -207,6 +200,7 @@ def test(subseqs, model, load_file=None):
         model = model.eval()
 
         print("###### Constructing maps ######")
+
         global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt)
         plot_pc(global_map_gt, "gt", f"testing-{subseq}")
         global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse)
@@ -215,8 +209,16 @@ def test(subseqs, model, load_file=None):
         plot_pc(global_map_gt, "pred", f"testing-{subseq}")
 
         print("###### Running testing ######")
-        mse_sparse, mae_sparse, locc_acc_sparse = compute_val_metrics(depth_sample_gt, depth_sample_sparse, traj_gt, traj_sparse, "testing")
-        mse_pred, mae_pred, locc_acc_pred = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_pred, "testing")
+
+        mse_sparse, mae_sparse, locc_acc_sparse = compute_val_metrics(depth_sample_gt, depth_sample_sparse, traj_gt, traj_sparse)
+        print(f"MSE sparse: {mse_sparse}")
+        print(f"MAE sparse: {mae_sparse}")
+        print(f"Localization accuracy sparse: {locc_acc_sparse}")
+
+        mse_pred, mae_pred, locc_acc_pred = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_pred)
+        print(f"MSE pred: {mse_pred}")
+        print(f"MAE pred: {mae_pred}")
+        print(f"Localization accuracy pred: {locc_acc_pred}")
 
         print("###### ALL DONE ######")
 
@@ -236,5 +238,4 @@ if __name__ == '__main__':
     main()
     # TODO:
     #   make training over multiple subsequences
-    #   make localization accuracy computation take into account rotation
     #   Make separate singularity image for gradslam?

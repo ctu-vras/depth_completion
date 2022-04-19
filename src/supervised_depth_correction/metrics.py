@@ -1,8 +1,7 @@
 import torch
-import pytorch3d
 from pytorch3d.loss import chamfer_distance
-from pytorch3d.transforms import so3_relative_angle
 from chamferdist import ChamferDistance
+from .transform import *
 
 
 def chamfer_loss(pointclouds, pointclouds_gt, py3d=True):
@@ -61,10 +60,7 @@ def localization_accuracy(poses1, poses2):
     for i in range(len(poses1)):
         pose1 = poses1[i]
         pose2 = poses2[i]
-        x1, y1, z1 = pose1[..., 0, 3], pose1[..., 1, 3], pose1[..., 2, 3]
-        x2, y2, z2 = pose2[..., 0, 3], pose2[..., 1, 3], pose2[..., 2, 3]
-        dist = ( (x1 - x2)**2 + (y1 - y2)**2 + (z1 - z2)**2 ) ** (1/2)
-        # TODO: check rotation dist computation (transform to axis-angle?)
-        rot_dist = so3_relative_angle(pose1[0, :, :3, :3], pose2[0, :, :3, :3])
+        delta_T = delta_transform(pose1.squeeze(), pose2.squeeze())
+        dist, rot_dist = translation_norm(delta_T), rotation_angle(delta_T)
         err += dist + rot_dist
     return err
