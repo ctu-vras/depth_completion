@@ -3,15 +3,13 @@ import time
 import torch
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.models import SparseConvNet
-import open3d as o3d
-import numpy as np
 import matplotlib.pyplot as plt
 import pytorch3d
 from pytorch3d.loss import chamfer_distance
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 from chamferdist import ChamferDistance
-
+from supervised_depth_correction.utils import plot_pc
 
 """
 Demo to show that gradient are propagated through SLAM pipeline with KITTI dataset
@@ -24,14 +22,14 @@ CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 
 BATCH_SIZE = 1
-NUM_EPISODES = 200
 LR = 0.001
 WEIGHT_DECAY = 0.01
 EPISODES = 150
-VISUALIZE = False
+VISUALIZE = True
 
 SUBSEQ = "2011_09_26_drive_0001_sync"
 USE_DEPTH_SELECTION = False
+LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
 
 
 def train():
@@ -46,9 +44,8 @@ def train():
     model = model.to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     loss_training = []
-    log_dir = f'./results/depth_completion_gradslam_{time.time()}'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
     print("###### Starting training ... ######")
 
     ################# learning loop #################
@@ -68,11 +65,11 @@ def train():
 
         # create map with gradslam
         rgbdimages_gt = RGBDImages(rgb_img_gt.to(DEVICE), depth_img_gt, K.to(DEVICE), pose_gt.to(DEVICE)).to(DEVICE)
-        slam = PointFusion(device=DEVICE, odom='gradicp', dsratio=4)
+        slam = PointFusion(device=DEVICE, odom='gradicp', dsratio=1)
         pointclouds_gt, recovered_poses_gt = slam(rgbdimages_gt)
 
         rgbdimages = RGBDImages(rgb_img.to(DEVICE), pred, K.to(DEVICE), pose.to(DEVICE)).to(DEVICE)
-        slam = PointFusion(device=DEVICE, odom='gradicp', dsratio=4)
+        slam = PointFusion(device=DEVICE, odom='gradicp', dsratio=1)
         pointclouds, recovered_poses = slam(rgbdimages)
 
         # do backward pass
@@ -90,7 +87,7 @@ def train():
 
         # result visualization
         if episode == EPISODES or episode % (EPISODES // 4) == 0:
-            torch.save(model.state_dict(), os.path.join(log_dir, f"weights-{episode}.pth"))
+            torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
 
             # convert depth into np images
             depth_img_gt_np = depth_img_gt.detach().cpu().numpy().squeeze()
@@ -110,10 +107,12 @@ def train():
             ax.set_title('Prediction')
             fig.tight_layout(h_pad=1)
             # save plot
-            plt.savefig(os.path.join(log_dir, f'plot-{episode}.png'))
+            plt.savefig(os.path.join(LOG_DIR, f'plot-{episode}.png'))
             if VISUALIZE:
                 # show plot
                 plt.show()
+                plot_pc(pointclouds)
+                plot_pc(pointclouds_gt)
     # END learning loop
 
     # plot training loss over episodes
@@ -123,7 +122,7 @@ def train():
     plt.xlabel('Episode')
     plt.ylabel('Training loss')
     plt.title('Loss over episodes')
-    plt.savefig(os.path.join(log_dir, 'Training_loss.png'))
+    plt.savefig(os.path.join(LOG_DIR, 'Training_loss.png'))
     if VISUALIZE:
         plt.show()
 

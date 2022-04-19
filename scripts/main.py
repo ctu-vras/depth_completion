@@ -19,27 +19,26 @@ DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "c
 # DEVICE = torch.device('cpu')
 
 BATCH_SIZE = 1
-NUM_EPISODES = 200
 LR = 0.001
 WEIGHT_DECAY = 0.01
 
-EPISODES = 10
+EPISODES = 100
 VISUALIZE = False
 
 USE_DEPTH_SELECTION = False
-POSE_PROVIDER = 'gt'
-LOG_DIR = f'./results/depth_completion_gradslam_{time.time()}'
+LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
+INIT_MODEL_STATE_DICT = os.path.join(os.path.dirname(__file__), 'weights.pth')
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
-def construct_map(ds, predictor=None, gt=False):
-    slam = PointFusion(device=DEVICE, odom=POSE_PROVIDER, dsratio=1)
+def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=5, step=1):
+    slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=1)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
     trajectory = []
 
     # TODO: check memory issue (sample global map before loss computation)
-    for i in ds.ids[:5:1]:
+    for i in ds.ids[:max_clouds:step]:
         colors, depths, intrinsics, poses = ds[i]
 
         # do forward pass
@@ -50,12 +49,9 @@ def construct_map(ds, predictor=None, gt=False):
 
         live_frame = RGBDImages(colors, depths, intrinsics, poses)
         pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
-        if gt:
-            trajectory.append(poses)
-        else:
-            trajectory.append(live_frame.poses)
-
         prev_frame = live_frame
+
+        trajectory.append(live_frame.poses)
 
         # write slam poses
         slam_pose = live_frame.poses.detach().squeeze()
@@ -95,6 +91,8 @@ def plot_pc(pc, episode, mode):
     """
     pc_o3d = pc.open3d(0)
     if VISUALIZE:
+        # Flip it, otherwise the pointcloud will be upside down
+        pc_o3d.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
         o3d.visualization.draw_geometries([pc_o3d])
     o3d.io.write_point_cloud(os.path.join(LOG_DIR, f'map-{mode}-{episode}.pcd'), pc_o3d)
 
@@ -124,6 +122,16 @@ def plot_metric(metric, metric_title):
         plt.show()
 
 
+def load_model(path=None):
+    model = SparseConvNet()
+    if path:
+        if os.path.exists(path):
+            model.load_state_dict(torch.load(path, map_location='cpu'))
+        else:
+            print('No model weights found. Training from scratch!!!')
+    return model
+
+
 # ------------------------------------ Learning functions------------------------------------ #
 def train(subseqs):
     subseq = subseqs[0]
@@ -134,7 +142,7 @@ def train(subseqs):
     print("###### Data loaded ######")
 
     print("###### Setting up training environment ######")
-    model = SparseConvNet()
+    model = load_model(INIT_MODEL_STATE_DICT)
     model = model.train()
     model = model.to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
@@ -144,13 +152,15 @@ def train(subseqs):
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
     # create gt global map
-    global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt, gt=True)
-    global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse, gt=True)
-    plot_pc(global_map_gt, "gt", "training")
+    global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt)
+    global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse)
+    # plot_pc(global_map_gt, "gt_dense", "training")
+    plot_pc(global_map_sparse, "gt_sparse", "training")
     print("###### Running training loop ######")
 
     for episode in range(EPISODES + 1):
-        global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=model, gt=False)
+        global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=model)
+        # global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=None)
 
         # do backward pass
         optimizer.zero_grad()
@@ -182,7 +192,7 @@ def train(subseqs):
     return model
 
 
-def test(subseqs, model, load_file=None):
+def test(subseqs, model):
     """
     Test if results of trained model are comparable on other subsequences
     """
@@ -193,20 +203,16 @@ def test(subseqs, model, load_file=None):
         dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False, device=DEVICE)
         print("###### Data loaded ######")
 
-        print("###### Setting up model ######")
-        if load_file is not None:
-            model.load_state_dict(torch.load(load_file, map_location='cpu'))
-        model = model.to(DEVICE)
-        model = model.eval()
-
         print("###### Constructing maps ######")
 
         global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt)
         plot_pc(global_map_gt, "gt", f"testing-{subseq}")
+
         global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse)
         plot_pc(global_map_gt, "sparse", f"testing-{subseq}")
+
         global_map_pred, traj_pred, depth_sample_pred = construct_map(dataset_sparse, model)
-        plot_pc(global_map_gt, "pred", f"testing-{subseq}")
+        plot_pc(global_map_pred, "pred", f"testing-{subseq}")
 
         print("###### Running testing ######")
 
@@ -223,15 +229,12 @@ def test(subseqs, model, load_file=None):
         print("###### ALL DONE ######")
 
 
-def main(training=True, file=None):
-    train_subseq = ["2011_09_26_drive_0017_sync"]
+def main(file=None):
+    train_subseq = ["2011_09_26_drive_0001_sync"]
     test_subseqs = ["2011_09_28_drive_0191_sync"]
     assert not any(x in test_subseqs for x in train_subseq)
-    if training:
-        model = train(train_subseq)
-    else:
-        model = SparseConvNet()
-    test(test_subseqs, model, load_file=file)
+    model = train(train_subseq)
+    test(test_subseqs, model)
 
 
 if __name__ == '__main__':

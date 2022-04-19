@@ -10,12 +10,6 @@ import pykitti
 from supervised_depth_correction.io import write, append
 
 
-# RAW_DATA_DIR = "/home/ruslan/data/datasets/kitti_raw"
-# DEPTH_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/"
-# DEPTH_SELECTION_DATA_DIR = "/home/ruslan/data/datasets/kitti_depth/depth_selection/val_selection_cropped"
-# RAW_DATA_DIR = "/home/jachym/KITTI/kitti_raw"
-# DEPTH_DATA_DIR = "/home/jachym/KITTI/depth_selection/val_selection_cropped"
-
 # the following paths assume that you have the datasets or symlinks in supervised_depth_correction/data folder
 RAW_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'KITTI', 'raw'))
 DEPTH_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'KITTI', 'depth'))
@@ -414,15 +408,15 @@ def gradslam_demo():
 
         prev_frame = live_frame
 
-        # write slam poses
-        slam_pose = live_frame.poses.detach().squeeze()
-        append(os.path.join(os.path.dirname(__file__), '..', '..', 'config/results/', 'slam_poses.txt'),
-               ', '.join(['%.6f' % x for x in slam_pose.flatten()]) + '\n')
+        # # write slam poses
+        # slam_pose = live_frame.poses.detach().squeeze()
+        # append(os.path.join(os.path.dirname(__file__), '..', '..', 'config/results/', 'slam_poses.txt'),
+        #        ', '.join(['%.6f' % x for x in slam_pose.flatten()]) + '\n')
 
     # visualize using open3d
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].detach().cpu().numpy()[::10, :])
-    o3d.visualization.draw_geometries([pcd])
+    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].detach().cpu())
+    o3d.visualization.draw_geometries([pcd.voxel_down_sample(voxel_size=0.5)])
 
 
 def main():
