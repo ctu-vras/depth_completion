@@ -27,6 +27,7 @@ def plot_depth(depth_sparse, depth_pred, depth_gt, episode, mode, visualize=Fals
         plt.savefig(os.path.join(log_dir, f'plot-{mode}-{episode}.png'))
     if visualize:
         plt.show()
+    plt.close(fig)
 
 
 def plot_pc(pc, episode, mode, visualize=False, log_dir=None):
@@ -49,13 +50,14 @@ def plot_pc(pc, episode, mode, visualize=False, log_dir=None):
         o3d.visualization.draw_geometries([pcd])
 
 
-def plot_metric(metric, metric_title, episode, mode, visualize=False, log_dir=None):
+def plot_metric(metric, metric_title, visualize=False, log_dir=None):
     """
     Plots graph of metric over episodes
     Args:
         metric: list of <torch.tensor>
         metric_title: string
     """
+    fig = plt.figure()
     x_ax = [i for i in range(len(metric))]
     y_ax = [loss.detach().cpu().numpy() for loss in metric]
     plt.plot(x_ax, y_ax)
@@ -66,3 +68,4 @@ def plot_metric(metric, metric_title, episode, mode, visualize=False, log_dir=No
         plt.savefig(os.path.join(log_dir, f'{metric_title}.png'))
     if visualize:
         plt.show()
+    plt.close(fig)
