@@ -43,6 +43,7 @@ def MAE(img1, img2):
     :return: <torch.tensor>
     """
     assert img1.shape == img2.shape
+    # https://medium.com/human-in-a-machine-world/mae-and-rmse-which-metric-is-better-e60ac3bde13d
     mse = torch.sum(torch.abs(img1 - img2))
     mse /= float(img1.shape[0] * img1.shape[1] * img1.shape[2])
     return mse

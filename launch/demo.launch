@@ -7,9 +7,7 @@
     <arg name="rate" default="0.3"/>
     <arg name="odom" default="gt"/>
     <arg name="device" default="cuda:0"/>
-    <arg name="opt" default="false"/>
-    <arg unless="$(arg opt)" name="inference_node" default="step_inference.py"/>
-    <arg if="$(arg opt)" name="inference_node" default="step_inference_opt.py"/>
+    <arg name="inference_node" default="gradslam_inference"/>
     <arg name="pub_gt" default="false"/>
 
     <group if="$(arg from_bag)">
@@ -23,7 +21,7 @@
         <param name="device" value="$(arg device)"/>
     </node>
 
-    <node if="$(arg pub_gt)" name="gt_world_publisher" pkg="supervised_depth_correction" type="gt_world_pub.py" output="screen"/>
+    <node if="$(arg pub_gt)" name="gt_world_publisher" pkg="supervised_depth_correction" type="gt_world_pub" output="screen"/>
 
     <!-- RVIZ -->
     <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"

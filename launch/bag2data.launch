@@ -13,7 +13,7 @@
     </group>
 
     <!-- Save data -->
-    <node name="save_dataset" pkg="supervised_depth_correction" type="bag2icl.py" output="screen">
+    <node name="save_dataset" pkg="supervised_depth_correction" type="bag2icl" output="screen">
         <param name="save_data" value="$(arg save_data)"/>
     </node>
 
