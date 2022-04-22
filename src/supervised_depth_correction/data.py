@@ -172,8 +172,8 @@ class KITTIDepthSelection(KITTIDepth):
     KITTI depth selection: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
 
-    def __init__(self, subseq, path=None, gt=True):
-        KITTIDepth.__init__(self, subseq=subseq, path=path, gt=gt)
+    def __init__(self, subseq, path=None, gt=True, camera='left'):
+        KITTIDepth.__init__(self, subseq=subseq, path=path, gt=gt, camera=camera)
         # path directory should contain folders: depth, rgb, intrinsics
         if path is None:
             path = DEPTH_SELECTION_DATA_DIR
@@ -226,18 +226,25 @@ class KITTIDepthSelection(KITTIDepth):
 
 
 class Dataset:
-    def __init__(self, subseq, selection=False, gt=False, depth_set='train', device=torch.device('cpu')):
+    def __init__(self, subseq,
+                 selection=False,
+                 gt=False,
+                 depth_set='train',
+                 camera='left',
+                 zero_origin=True,
+                 device=torch.device('cpu')):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
-            self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt)
+            self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt, camera=camera)
         else:
-            self.ds_depths = KITTIDepth(subseq=subseq, gt=gt, mode=depth_set)
+            self.ds_depths = KITTIDepth(subseq=subseq, gt=gt, mode=depth_set, camera=camera)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
 
         # move poses to origin to 0:
-        Tr_inv = np.linalg.inv(self.poses[0])
-        self.poses = np.asarray([np.matmul(Tr_inv, pose) for pose in self.poses])
+        if zero_origin:
+            Tr_inv = np.linalg.inv(self.poses[0])
+            self.poses = np.asarray([np.matmul(Tr_inv, pose) for pose in self.poses])
         self.device = device
 
     def __len__(self):
@@ -393,7 +400,7 @@ def gradslam_demo():
     # subseq = np.random.choice(subseqs, 1)[0]
     subseq = subseqs[2]
 
-    ds = Dataset(subseq, gt=True, depth_set='train')
+    ds = Dataset(subseq, gt=True, depth_set='train', zero_origin=False)
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     pose_provider = 'gt'
     assert pose_provider == 'gt' or pose_provider == 'icp' or pose_provider == 'gradicp'

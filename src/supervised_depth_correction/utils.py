@@ -3,6 +3,8 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 import torch
 import os
+from scipy import interpolate
+import numpy as np
 
 
 def plot_depth(depth_sparse, depth_pred, depth_gt, episode, mode, visualize=False, log_dir=None):
@@ -69,3 +71,40 @@ def plot_metric(metric, metric_title, visualize=False, log_dir=None):
     if visualize:
         plt.show()
     plt.close(fig)
+
+
+def interpolate_missing_pixels(
+        image: np.ndarray,
+        mask: np.ndarray,
+        method: str = 'nearest',
+        fill_value: float = 0
+):
+    """
+    :param image: a 2D image
+    :param mask: a 2D boolean image, True indicates missing values
+    :param method: interpolation method, one of
+        'nearest', 'linear', 'cubic'.
+    :param fill_value: which value to use for filling up data outside the
+        convex hull of known pixel values.
+        Default is 0, Has no effect for 'nearest'.
+    :return: the image with missing values interpolated
+    """
+
+    h, w = image.shape[:2]
+    xx, yy = np.meshgrid(np.arange(w), np.arange(h))
+
+    known_x = xx[~mask]
+    known_y = yy[~mask]
+    known_v = image[~mask]
+    missing_x = xx[mask]
+    missing_y = yy[mask]
+
+    interp_values = interpolate.griddata(
+        (known_x, known_y), known_v, (missing_x, missing_y),
+        method=method, fill_value=fill_value
+    )
+
+    interp_image = image.copy()
+    interp_image[missing_y, missing_x] = interp_values
+
+    return interp_image

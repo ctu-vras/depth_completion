@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+
+import numpy as np
+import torch
+from gradslam.slam.pointfusion import PointFusion
+from gradslam.slam.icpslam import ICPSLAM
+from gradslam import Pointclouds, RGBDImages
+from supervised_depth_correction.data import Dataset
+# ROS
+import rospy
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped
+from ros_numpy import msgify, numpify
+from tf.transformations import quaternion_from_matrix
+
+
+class GradslamROS:
+    def __init__(self, subseq: str = ''):
+        self.device = torch.device(rospy.get_param('~device', 'cuda:0'))
+        # self.slam = PointFusion(odom=rospy.get_param('~odometry', 'gt'), dsratio=4, device=self.device)
+        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'gt'), dsratio=4, device=self.device)
+        self.pointclouds = Pointclouds(device=self.device)
+        self.live_frame = None
+        self.route = Path()
+        self.world_frame = 'world'
+        self.route.header.frame_id = self.world_frame
+        self.route_pub = rospy.Publisher('~route', Path, queue_size=2)
+        self.pc_pub = rospy.Publisher('~cloud', PointCloud2, queue_size=1)
+        self.map_step = rospy.get_param('~map_step', 4)
+        self.camera = rospy.get_param('~camera', 'left')  # 'right', 'left'
+        self.depth_ds = Dataset(subseq, gt=rospy.get_param('~gt_depth', False), camera=self.camera, zero_origin=False)
+        self.delay_start = rospy.get_param('~delay_start', 1.0)
+        self.period = rospy.get_param('~period', 1.0)
+        self.index = 0
+        self.ds_step = 1
+        self.timer = rospy.Timer(rospy.Duration(self.delay_start), self.start_timer, oneshot=True)
+
+    def start_timer(self, evt):
+        self.timer = rospy.Timer(rospy.Duration(self.period), self.run)
+        rospy.loginfo('Publishing robot data.')
+
+    def move(self):
+        if self.index < len(self.depth_ds):
+            self.index += 1
+            rospy.logdebug('Moved to next data sample')
+
+    def slam_step(self):
+        colors, depths, intrinsics, poses = self.depth_ds[self.index * self.ds_step]
+
+        live_frame = RGBDImages(colors, depths, intrinsics, poses).to(self.device)
+        self.pointclouds, live_frame.poses = self.slam.step(self.pointclouds, live_frame, self.live_frame)
+
+        self.live_frame = live_frame
+        rospy.logdebug(f'Point cloud shape: {self.pointclouds.points_list[0].shape}')
+
+    def run(self, evt):
+        self.slam_step()
+        self.publish_path(self.live_frame)
+        self.publish_cloud()
+        self.move()
+
+    def publish_path(self, live_frame):
+        assert live_frame.poses.shape == (1, 1, 4, 4)
+        pose = PoseStamped()
+        pose.header.frame_id = self.world_frame
+        pose.header.stamp = rospy.Time.now()
+        pose.pose.position.x = live_frame.poses[..., 0, 3]
+        pose.pose.position.y = live_frame.poses[..., 1, 3]
+        pose.pose.position.z = live_frame.poses[..., 2, 3]
+        q = quaternion_from_matrix(live_frame.poses.squeeze().cpu().numpy())
+        pose.pose.orientation.x = q[0]
+        pose.pose.orientation.y = q[1]
+        pose.pose.orientation.z = q[2]
+        pose.pose.orientation.w = q[3]
+
+        self.route.poses.append(pose)
+        self.route.header.stamp = rospy.Time.now()
+        self.route_pub.publish(self.route)
+        rospy.logdebug('Published path')
+
+    def publish_cloud(self):
+        # publish point cloud
+        n_pts = np.ceil(self.pointclouds.points_padded.shape[1] / self.map_step).astype(int)
+        cloud = np.zeros((n_pts,), dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+                                          ('r', 'f4'), ('g', 'f4'), ('b', 'f4')])
+        for i, f in enumerate(['x', 'y', 'z']):
+            cloud[f] = self.pointclouds.points_padded[..., i].squeeze().cpu().numpy()[::self.map_step]
+        for i, f in enumerate(['r', 'g', 'b']):
+            cloud[f] = self.pointclouds.colors_padded[..., i].squeeze().cpu().numpy()[::self.map_step] / 255.
+        pc_msg = msgify(PointCloud2, cloud)
+        pc_msg.header.stamp = rospy.Time.now()
+        pc_msg.header.frame_id = self.world_frame
+        self.pc_pub.publish(pc_msg)
+        rospy.logdebug('Published point cloud')
+
+
+def main():
+    rospy.init_node('supervised_depth_correction_ros', log_level=rospy.DEBUG)
+    subseqs = [
+        "2011_09_26_drive_0001_sync",
+        "2011_09_26_drive_0009_sync",
+        "2011_09_26_drive_0011_sync",
+        "2011_09_26_drive_0018_sync",
+        "2011_09_30_drive_0016_sync"
+    ]
+    subseq = np.random.choice(subseqs, 1)[0]
+    proc = GradslamROS(subseq)
+    rospy.spin()
+
+
+if __name__ == '__main__':
+    main()

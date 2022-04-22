@@ -2,15 +2,13 @@
 
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 import torch
-import os
 from time import time
 from gradslam.slam.pointfusion import PointFusion
 from gradslam.slam.icpslam import ICPSLAM
 from gradslam import Pointclouds, RGBDImages
 from threading import RLock
-from scipy import interpolate
+from supervised_depth_correction.utils import interpolate_missing_pixels
 # ROS
 import rospy
 from cv_bridge import CvBridge, CvBridgeError
@@ -23,45 +21,8 @@ from ros_numpy import msgify, numpify
 from tf.transformations import quaternion_from_matrix
 
 
-def interpolate_missing_pixels(
-        image: np.ndarray,
-        mask: np.ndarray,
-        method: str = 'nearest',
-        fill_value: int = 0
-):
-    """
-    :param image: a 2D image
-    :param mask: a 2D boolean image, True indicates missing values
-    :param method: interpolation method, one of
-        'nearest', 'linear', 'cubic'.
-    :param fill_value: which value to use for filling up data outside the
-        convex hull of known pixel values.
-        Default is 0, Has no effect for 'nearest'.
-    :return: the image with missing values interpolated
-    """
-
-    h, w = image.shape[:2]
-    xx, yy = np.meshgrid(np.arange(w), np.arange(h))
-
-    known_x = xx[~mask]
-    known_y = yy[~mask]
-    known_v = image[~mask]
-    missing_x = xx[mask]
-    missing_y = yy[mask]
-
-    interp_values = interpolate.griddata(
-        (known_x, known_y), known_v, (missing_x, missing_y),
-        method=method, fill_value=fill_value
-    )
-
-    interp_image = image.copy()
-    interp_image[missing_y, missing_x] = interp_values
-
-    return interp_image
-
-
 class GradslamROS:
-    def __init__(self, odometry='gt', height: int = 240, width: int = 320):
+    def __init__(self, height: int = 240, width: int = 320):
         self.bridge = CvBridge()
         self.tf = tf2_ros.Buffer()
         self.tf_sub = tf2_ros.TransformListener(self.tf)
@@ -70,7 +31,8 @@ class GradslamROS:
         self.camera = 'front'  # 'right', 'front'
         self.camera_frame = f'X1/base_link/{self.camera}_realsense_optical'
         self.device = torch.device(rospy.get_param('~device', 'cuda:0'))
-        self.slam = PointFusion(odom=odometry, dsratio=4, device=self.device)
+        # self.slam = PointFusion(odom=rospy.get_param('~odometry', 'gt'), dsratio=4, device=self.device)
+        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'gt'), dsratio=4, device=self.device)
         self.width, self.height = width, height
         self.pointclouds = Pointclouds(device=self.device)
         self.prev_frame = None
@@ -207,10 +169,6 @@ class GradslamROS:
 
 
 if __name__ == '__main__':
-    rospy.init_node('gradslam_ros', log_level=rospy.DEBUG)
-    odometry = rospy.get_param('~odometry')  # gt, icp, gradicp
-    proc = GradslamROS(odometry=odometry)
-    try:
-        rospy.spin()
-    except KeyboardInterrupt:
-        print("Shutting down")
+    rospy.init_node('gradslam_ros', log_level=rospy.INFO)
+    proc = GradslamROS()
+    rospy.spin()
