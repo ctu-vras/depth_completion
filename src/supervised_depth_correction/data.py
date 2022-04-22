@@ -226,12 +226,12 @@ class KITTIDepthSelection(KITTIDepth):
 
 
 class Dataset:
-    def __init__(self, subseq, selection=False, gt=False, device=torch.device('cpu')):
+    def __init__(self, subseq, selection=False, gt=False, depth_set='train', device=torch.device('cpu')):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
             self.ds_depths = KITTIDepthSelection(subseq=subseq, gt=gt)
         else:
-            self.ds_depths = KITTIDepth(subseq=subseq, gt=gt)
+            self.ds_depths = KITTIDepth(subseq=subseq, gt=gt, mode=depth_set)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
 
@@ -385,12 +385,15 @@ def gradslam_demo():
     subseqs = [
                "2011_09_26_drive_0001_sync",
                "2011_09_26_drive_0009_sync",
-               "2011_09_26_drive_0011_sync"
+               "2011_09_26_drive_0011_sync",
+               "2011_09_26_drive_0018_sync",
+               "2011_09_30_drive_0016_sync"
                ]
     # np.random.seed(135)
-    subseq = np.random.choice(subseqs, 1)[0]
+    # subseq = np.random.choice(subseqs, 1)[0]
+    subseq = subseqs[2]
 
-    ds = Dataset(subseq, gt=True)
+    ds = Dataset(subseq, gt=True, depth_set='train')
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     pose_provider = 'gt'
     assert pose_provider == 'gt' or pose_provider == 'icp' or pose_provider == 'gradicp'

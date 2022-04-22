@@ -35,6 +35,7 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=6, step=1):
     trajectory = []
 
     # TODO: check memory issue
+    depths = None
     for i in ds.ids[:max_clouds:step]:
         colors, depths, intrinsics, poses = ds[i]
 
@@ -68,9 +69,10 @@ def load_model(path=None):
     model = SparseConvNet()
     if path:
         if os.path.exists(path):
+            print('Loading model weights from %s' % path)
             model.load_state_dict(torch.load(path, map_location='cpu'))
         else:
-            print('No model weights found. Training from scratch!!!')
+            print('No model weights found!!!')
     return model
 
 
@@ -204,7 +206,7 @@ def main():
                     "2011_09_26_drive_0117_sync", "2011_09_26_drive_0057_sync", "2011_09_28_drive_0075_sync",
                     "2011_09_28_drive_0145_sync", "2011_09_28_drive_0220_sync", "2011_09_26_drive_0101_sync",
                     "2011_09_28_drive_0098_sync", "2011_09_28_drive_0167_sync", "2011_10_03_drive_0042_sync"]
-    test_subseqs = ["2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync", "2011_09_30_drive_0016_sync"]
+    test_subseqs = ["2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync"]
     assert not any(x in test_subseqs for x in train_subseq)
     TRAIN = False
     if TRAIN:
