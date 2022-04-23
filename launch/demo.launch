@@ -4,7 +4,7 @@
     <arg name="from_bag" default="true"/>
     <arg name="odom" default="gt"/>
     <arg name="device" default="cuda:0"/>
-    <arg name="pub_gt" default="false"/>
+    <arg name="pub_gt_mesh" default="false"/>
 
     <group if="$(eval from_bag)">
         <param name="use_sim_time" value="true"/>
@@ -22,7 +22,7 @@
         </node>
 
         <!-- GT mesh of the world publisher -->
-        <node if="$(arg pub_gt)"
+        <node if="$(arg pub_gt_mesh)"
               name="gt_world_publisher" pkg="supervised_depth_correction" type="gt_world_pub" output="screen"/>
     </group>
 
