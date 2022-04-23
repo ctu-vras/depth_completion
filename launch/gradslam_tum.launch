@@ -2,10 +2,9 @@
 <launch>
     <arg name="rviz" default="true"/>
     <arg name="odom" default="gradicp"/>
-    <arg name="dataset" default="tum"/>
 
     <!-- Step inference -->
-    <node name="supervised_depth_correction" pkg="supervised_depth_correction" type="$(arg dataset)2ros" output="screen">
+    <node name="supervised_depth_correction" pkg="supervised_depth_correction" type="gradslam_tum" output="screen">
         <param name="odometry" value="$(arg odom)"/>
     </node>
 

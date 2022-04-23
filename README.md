@@ -32,7 +32,7 @@ roslaunch supervised_depth_correction demo.launch odom:=gt
 ```
 
 You may also want to visualize a ground truth mesh of the world by pacing the argument:
-```pub_gt:=true```.
+```pub_gt_mesh:=true```.
 Note, that this option requires
 [Pytorch3d](https://github.com/facebookresearch/pytorch3d)
 installed.
