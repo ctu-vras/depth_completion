@@ -22,31 +22,38 @@ def chamfer_loss(pointclouds, pointclouds_gt, sample_step=1):
     return cd
 
 
-def MSE(img1, img2):
+def RMSE(gt, pred, mask=True):
     """
-    MSE between gt and predicted depth images
+    RMSE between gt and predicted depth images
     :param depth_gt: <torch.tensor>
     :param depth_pred: <torch.tensor>
     :return: <torch.tensor>
     """
-    assert img1.shape == img2.shape
-    mse = torch.sum((img1 - img2) ** 2)
-    mse /= float(img1.shape[0] * img1.shape[1] * img1.shape[2])
-    return mse
+    assert gt.shape == pred.shape
+
+    if mask:
+        masked = (gt > 0)
+        rmse = torch.sum( ((gt[masked] - pred[masked]) ** 2) ** (1/2) )
+    else:
+        rmse = torch.sum( ((gt - pred) ** 2) ** (1/2) )
+    rmse /= float(gt.shape[0] * gt.shape[1] * gt.shape[2])
+    return rmse
 
 
-def MAE(img1, img2):
+def MAE(gt, pred, mask=True):
     """
     MAE between gt and predicted depth images
-    :param depth_gt: <torch.tensor>
-    :param depth_pred: <torch.tensor>
-    :return: <torch.tensor>
     """
-    assert img1.shape == img2.shape
+    assert gt.shape == pred.shape
+
     # https://medium.com/human-in-a-machine-world/mae-and-rmse-which-metric-is-better-e60ac3bde13d
-    mse = torch.sum(torch.abs(img1 - img2))
-    mse /= float(img1.shape[0] * img1.shape[1] * img1.shape[2])
-    return mse
+    if mask:
+        masked = (gt > 0)
+        mae = torch.sum(torch.abs(gt[masked] - pred[masked]))
+    else:
+        mae = torch.sum(torch.abs(gt - pred))
+    mae /= float(gt.shape[0] * gt.shape[1] * gt.shape[2])
+    return mae
 
 
 def localization_accuracy(poses1, poses2):
