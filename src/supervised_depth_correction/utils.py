@@ -52,7 +52,7 @@ def plot_pc(pc, episode, mode, visualize=False, log_dir=None):
         o3d.visualization.draw_geometries([pcd])
 
 
-def plot_metric(metric, metric_title, visualize=False, log_dir=None):
+def plot_metric(metric, metric_title, visualize=False, log_dir=None, val_scaling=None):
     """
     Plots graph of metric over episodes
     Args:
@@ -60,7 +60,10 @@ def plot_metric(metric, metric_title, visualize=False, log_dir=None):
         metric_title: string
     """
     fig = plt.figure()
-    x_ax = [i for i in range(len(metric))]
+    if val_scaling is None:
+        x_ax = [i for i in range(len(metric))]
+    else:
+        x_ax = [i*val_scaling for i in range(len(metric))]
     y_ax = [loss.detach().cpu().numpy() for loss in metric]
     plt.plot(x_ax, y_ax)
     plt.xlabel('Episode')
