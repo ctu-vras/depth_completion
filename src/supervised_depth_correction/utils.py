@@ -5,6 +5,18 @@ import torch
 import os
 from scipy import interpolate
 import numpy as np
+from .models import SparseConvNet
+
+
+def load_model(path=None):
+    model = SparseConvNet()
+    if path:
+        if os.path.exists(path):
+            print('Loading model weights from %s' % path)
+            model.load_state_dict(torch.load(path, map_location='cpu'))
+        else:
+            print('No model weights found!!!')
+    return model
 
 
 def plot_depth(depth_sparse, depth_pred, depth_gt, episode, mode, visualize=False, log_dir=None):

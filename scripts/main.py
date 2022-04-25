@@ -5,7 +5,7 @@ from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.io import write, append
-from supervised_depth_correction.models import SparseConvNet
+from supervised_depth_correction.utils import load_model
 from supervised_depth_correction.metrics import RMSE, MAE, chamfer_loss, localization_accuracy
 from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric
 
@@ -25,15 +25,15 @@ VALIDATION_EPISODE = 5
 
 USE_DEPTH_SELECTION = False
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
-INIT_MODEL_STATE_DICT = os.path.join(os.path.dirname(__file__), 'weights.pth')
+INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-539.pth'))
 
 TRAIN = False
 TEST = True
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
-def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=8, step=1):
-    slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=1)
+def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=4, step=1, dsratio=4):
+    slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=dsratio)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
     trajectory = []
@@ -67,17 +67,6 @@ def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
     mae = MAE(depth_gt, depth_pred)
     loc_acc = localization_accuracy(traj_gt, traj_pred)
     return rmse, mae, loc_acc
-
-
-def load_model(path=None):
-    model = SparseConvNet()
-    if path:
-        if os.path.exists(path):
-            print('Loading model weights from %s' % path)
-            model.load_state_dict(torch.load(path, map_location='cpu'))
-        else:
-            print('No model weights found!!!')
-    return model
 
 
 # ------------------------------------ Learning functions------------------------------------ #
@@ -170,13 +159,12 @@ def train(train_subseqs, validation_subseq):
     return model
 
 
-def test(subseqs, model):
+def test(subseqs, model, max_clouds=4, dsratio=4):
     """
     Test if results of trained model are comparable on other subsequences
     """
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
-    max_clouds = 4
 
     for subseq in subseqs:
         print(f"###### Starting testing of subseq: {subseq} ######")
@@ -189,11 +177,12 @@ def test(subseqs, model):
 
         print("###### Constructing maps ######")
         print("GT")
-        global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt, max_clouds=max_clouds)
+        global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt, max_clouds=max_clouds, dsratio=dsratio)
         del dataset_gt
         plot_pc(global_map_gt, "gt", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
         print("Sparse")
-        global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse, max_clouds=max_clouds, pose_provider='icp')
+        global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse, max_clouds=max_clouds,
+                                                                            pose_provider='icp', dsratio=dsratio)
         plot_pc(global_map_gt, "sparse", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
 
         print("###### Running testing ######")
@@ -212,7 +201,7 @@ def test(subseqs, model):
         print("Pred")
         del global_map_sparse
         global_map_pred, traj_pred, depth_sample_pred = construct_map(dataset_sparse, model, max_clouds=max_clouds,
-                                                                      pose_provider='icp')
+                                                                      pose_provider='icp', dsratio=dsratio)
         plot_pc(global_map_pred, "pred", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
         mse_pred, mae_pred, locc_acc_pred = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_pred)
         chamfer_dist = chamfer_loss(global_map_gt, global_map_pred, sample_step=5)
@@ -245,11 +234,12 @@ def main():
     if TRAIN:
         model = train(train_subseqs, validation_subseq)
     else:
-        model = load_model(os.path.join("..", "config", "results", "weights", "weights-980.pth"))
+        # model = load_model(os.path.join("..", "config", "results", "weights", "weights-980.pth"))
+        model = load_model(INIT_MODEL_STATE_DICT)
         model = model.to(DEVICE)
         model = model.eval()
     if TEST:
-        test(test_subseqs, model)
+        test(test_subseqs, model, max_clouds=4, dsratio=4)
 
 
 if __name__ == '__main__':

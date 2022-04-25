@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -9,6 +10,7 @@ from gradslam.datasets.tum import TUM
 from gradslam.slam.icpslam import ICPSLAM
 from gradslam import Pointclouds, RGBDImages
 from supervised_depth_correction.data import Dataset
+from supervised_depth_correction.utils import load_model
 # ROS
 import rospy
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
@@ -73,6 +75,12 @@ class GradslamROS:
         self.period = rospy.get_param('~period', 1.0)
         self.index = 0
         self.ds_step = 1
+        self.device = torch.device(rospy.get_param('~device', 'cpu'))
+        self.depth_completion = rospy.get_param('~depth_completion', False)
+        self.dc_model = load_model(rospy.get_param('~dc_model_path',
+                                                   os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-539.pth'))))
+        self.dc_model.to(self.device)
+        self.dc_model.eval()
         self.timer = rospy.Timer(rospy.Duration(self.delay_start), self.start_timer, oneshot=True)
 
     def start_timer(self, evt):
@@ -86,8 +94,17 @@ class GradslamROS:
 
     def slam_step(self):
         colors, depths, intrinsics, poses = self.ds[self.index * self.ds_step]
+        colors = colors.to(self.device)
+        depths = depths.to(self.device)
+        intrinsics = intrinsics.to(self.device)
+        poses = poses.to(self.device)
 
-        live_frame = RGBDImages(colors, depths, intrinsics, poses).to(self.device)
+        # depth completion model forward pass
+        if self.dc_model is not None and self.depth_completion:
+            rospy.loginfo('Applying depth completion model')
+            depths = self.dc_model(depths, mask=(depths > 0).float())
+
+        live_frame = RGBDImages(colors, depths, intrinsics, poses)
         self.pointclouds, live_frame.poses = self.slam.step(self.pointclouds, live_frame, self.live_frame)
 
         self.live_frame = live_frame
@@ -126,9 +143,9 @@ class GradslamROS:
         cloud = np.zeros((n_pts,), dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
                                           ('r', 'f4'), ('g', 'f4'), ('b', 'f4')])
         for i, f in enumerate(['x', 'y', 'z']):
-            cloud[f] = self.pointclouds.points_padded[..., i].squeeze().cpu().numpy()[::self.map_step]
+            cloud[f] = self.pointclouds.points_padded[..., i].detach().squeeze().cpu().numpy()[::self.map_step]
         for i, f in enumerate(['r', 'g', 'b']):
-            cloud[f] = self.pointclouds.colors_padded[..., i].squeeze().cpu().numpy()[::self.map_step] / 255.
+            cloud[f] = self.pointclouds.colors_padded[..., i].detach().squeeze().cpu().numpy()[::self.map_step] / 255.
         pc_msg = msgify(PointCloud2, cloud)
         pc_msg.header.stamp = rospy.Time.now()
         pc_msg.header.frame_id = self.world_frame
