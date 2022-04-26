@@ -27,7 +27,7 @@
 2. Building Singularity image.
    
    One option could be to use the prebuilt singularity image.
-   Download it from [here](https://drive.google.com/drive/folders/1h2NVxCMva06nUKfHKthEJ5KkHotILvQY?usp=sharing).
+   Download it from [here](https://drive.google.com/drive/folders/1sLJKLenocEIsqBZJy4HELBphzaQNVjbe?usp=sharing).
 
    If you would like to build a singularity image yourself,
    please do the following:
@@ -42,7 +42,7 @@
    Ones, you have the singularity image build, it would be possible to run the package inside the environment as follows.
    In the example bellow, first, we bind the up to date package with data to our image.
    Then we source the ROS workspace inside the image.
-   The next step is to launch the demo on the provided bag file.
+   The next step is to launch the demo on the provided [bag file](https://drive.google.com/file/d/1kFbH38nbsHm7UR1B9Du3A0BcjLG1CiSR/view?usp=sharing).
 
    ```bash
    singularity shell --nv --bind /full/path/to/supervised_depth_correction/data/:/opt/ros/depthcorr_ws/src/supervised_depth_correction/data/ supervised_depth_correction.simg
