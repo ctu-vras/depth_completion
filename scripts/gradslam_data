@@ -3,20 +3,17 @@
 import os
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from gradslam.slam.pointfusion import PointFusion
-from gradslam.datasets.icl import ICL
-from gradslam.datasets.tum import TUM
 from gradslam.slam.icpslam import ICPSLAM
 from gradslam import Pointclouds, RGBDImages
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.utils import load_model
 # ROS
 import rospy
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2
+from sensor_msgs.msg import CameraInfo, PointCloud2
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped, TransformStamped
-from ros_numpy import msgify, numpify
+from ros_numpy import msgify
 from tf.transformations import quaternion_from_matrix
 import tf2_ros
 
