@@ -1,6 +1,6 @@
 # [Supervised Depth Correction](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
 
-![mapping_gradslam](docs/imgs/gradslam_subt.png)
+![mapping_gradslam](docs/imgs/depth_completion_pipeline.png)
 
 Please, follow the installation instruction in
 [docs/install.md](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/docs/install.md)
@@ -8,6 +8,8 @@ before proceeding next.
 
 
 ## Differentiable SLAM and Subt simulator
+
+![mapping_gradslam](docs/imgs/gradslam_subt.png)
 
 Download [RGB-D images](https://drive.google.com/drive/folders/1Y1GSDI-Qo6XpZZPtUTi9ou2tghoYh5fr?usp=sharing)
 
