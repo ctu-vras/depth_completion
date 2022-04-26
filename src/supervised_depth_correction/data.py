@@ -1,6 +1,8 @@
 from __future__ import absolute_import, division, print_function
 import os
 import glob
+
+import cv2.cv2
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -232,6 +234,8 @@ class Dataset:
                  depth_set='train',
                  camera='left',
                  zero_origin=True,
+                 width=None,
+                 height=None,
                  device=torch.device('cpu')):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
@@ -240,6 +244,8 @@ class Dataset:
             self.ds_depths = KITTIDepth(subseq=subseq, gt=gt, mode=depth_set, camera=camera)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
+        self.width = width
+        self.height = height
 
         # move poses to origin to 0:
         if zero_origin:
@@ -266,6 +272,19 @@ class Dataset:
         item = i if i in self.ids else self.ids[i]
         assert item in self.ids
         colors, depths, K = self.ds_depths[item]
+
+        # TODO: change size of images and intrinsics matrix
+        # if self.width and self.height:
+        #     h, w = colors.shape[:2]
+        #     scale = self.width / w
+        #     colors = cv2.cv2.resize(colors, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        #     depths = cv2.cv2.resize(depths, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        #     depths = np.asarray(depths).reshape([depths.shape[0], depths.shape[1], 1])
+        #     K[0, 0] *= scale
+        #     K[1, 1] *= scale
+        #     K[0, 2] *= scale
+        #     K[1, 2] *= scale
+
         # for p1, p2 in zip(self.poses, self.ds_poses.poses):
         #     assert np.allclose(p1, p2)
         poses = self.poses[item]
@@ -400,13 +419,13 @@ def gradslam_demo():
     # subseq = np.random.choice(subseqs, 1)[0]
     subseq = subseqs[2]
 
-    ds = Dataset(subseq, gt=True, depth_set='train', zero_origin=False)
+    ds = Dataset(subseq, gt=True, depth_set='train', width=621, height=187, zero_origin=False)
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     pose_provider = 'gt'
     assert pose_provider == 'gt' or pose_provider == 'icp' or pose_provider == 'gradicp'
 
     # create global map
-    slam = PointFusion(device=device, odom=pose_provider, dsratio=1)
+    slam = PointFusion(device=device, odom=pose_provider, dsratio=4)
     prev_frame = None
     pointclouds = Pointclouds(device=device)
 
@@ -426,7 +445,7 @@ def gradslam_demo():
     # visualize using open3d
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].detach().cpu())
-    o3d.visualization.draw_geometries([pcd.voxel_down_sample(voxel_size=0.5)])
+    o3d.visualization.draw_geometries([pcd])
 
 
 def main():

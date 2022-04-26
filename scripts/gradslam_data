@@ -57,8 +57,8 @@ def matrix_to_pose_msg(T, frame_id='world'):
 class GradslamROS:
     def __init__(self, subseq: str = ''):
         self.device = torch.device(rospy.get_param('~device', 'cuda:0'))
-        # self.slam = PointFusion(odom=rospy.get_param('~odometry', 'gt'), dsratio=4, device=self.device)
-        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'gt'), dsratio=4, device=self.device)
+        # self.slam = PointFusion(odom=rospy.get_param('~odometry', 'gt'), dsratio=1, device=self.device)
+        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'gt'), dsratio=1, device=self.device)
         self.pointclouds = Pointclouds(device=self.device)
         self.live_frame = None
         self.route = Path()
@@ -102,7 +102,8 @@ class GradslamROS:
         # depth completion model forward pass
         if self.dc_model is not None and self.depth_completion:
             rospy.loginfo('Applying depth completion model')
-            depths = self.dc_model(depths, mask=(depths > 0).float())
+            with torch.no_grad():
+                depths = self.dc_model(depths, mask=(depths > 0).float())
 
         live_frame = RGBDImages(colors, depths, intrinsics, poses)
         self.pointclouds, live_frame.poses = self.slam.step(self.pointclouds, live_frame, self.live_frame)
@@ -163,7 +164,7 @@ def main():
         "2011_09_30_drive_0016_sync"
     ]
     # subseq = np.random.choice(subseqs, 1)[0]
-    subseq = subseqs[0]
+    subseq = subseqs[1]
     proc = GradslamROS(subseq)
     rospy.spin()
 

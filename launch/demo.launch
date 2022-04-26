@@ -6,6 +6,7 @@
     <arg name="device" default="cpu"/>
     <arg name="pub_gt_mesh" default="false"/>
     <arg name="depth_completion" default="false"/>
+    <arg name="gt_depth" default="false"/>
 
     <group if="$(eval from_bag)">
         <param name="use_sim_time" value="true"/>
@@ -33,6 +34,7 @@
             <param name="odometry" value="$(arg odom)"/>
             <param name="device" value="$(arg device)"/>
             <param name="depth_completion" value="$(arg depth_completion)"/>
+            <param name="gt_depth" value="$(arg gt_depth)"/>
         </node>
     </group>
 
