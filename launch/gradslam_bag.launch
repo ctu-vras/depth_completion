@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <launch>
     <arg name="rviz" default="true"/>
-    <arg name="odom" default="gt"/>
-    <arg name="device" default="cpu"/>
-    <arg name="pub_gt_mesh" default="false"/>
+    <arg name="odom" default="gt" doc="Odometry provider in GradSLAM: ['gt', 'icp', 'gradicp']"/>
+    <arg name="device" default="cpu" doc="Device to run tensor operations on: cpu or cuda"/>
+    <arg name="pub_gt_mesh" default="false" doc="Publish ground truth of Subt world or not. Meshes should be downloaded."/>
 
     <param name="use_sim_time" value="true"/>
 

@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <launch>
-    <arg name="rviz" default="true"/>
-    <arg name="odom" default="gt"/>
-    <arg name="device" default="cpu"/>
-    <arg name="depth_completion" default="false"/>
-    <arg name="gt_depth" default="false"/>
+    <arg name="rviz" default="true" doc="Laucnh RViz for data visualization or not"/>
+    <arg name="odom" default="gt" doc="Odometry provider in GradSLAM: ['gt', 'icp', 'gradicp']"/>
+    <arg name="device" default="cpu" doc="Device to run tensor operations on: cpu or cuda"/>
+    <arg name="depth_completion" default="false" doc="Use depth completion model before SLAM input or not"/>
+    <arg name="gt_depth" default="false" doc="Use ground truth depth clouds or sparse lidar clouds from KITTI Depth.
+                                              It doesn't make sense to set this argument to 'true'
+                                              when 'depth_completion' is also set to 'true'"/>
+    <arg name="kitti_sequence" default="2011_09_26_drive_0009_sync" doc="Sequence name from KITTI Depth dataset"/>
 
     <!-- GradSLAM step inference on KITTI depth data -->
     <node name="supervised_depth_correction" pkg="supervised_depth_correction" type="gradslam_data" output="screen">
@@ -13,6 +16,7 @@
             device: $(arg device)
             depth_completion: $(arg depth_completion)
             gt_depth: $(arg gt_depth)
+            kitti_sequence: $(arg kitti_sequence)
         </rosparam>
     </node>
 

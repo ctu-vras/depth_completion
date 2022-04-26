@@ -161,7 +161,7 @@ def main():
         "2011_09_30_drive_0016_sync"
     ]
     # subseq = np.random.choice(subseqs, 1)[0]
-    subseq = subseqs[1]
+    subseq = rospy.get_param('~kitti_sequence', subseqs[1])
     proc = GradslamROS(subseq)
     rospy.spin()
 
