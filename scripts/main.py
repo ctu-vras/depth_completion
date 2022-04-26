@@ -140,6 +140,8 @@ def train(train_subseqs, validation_subseq):
                 print(f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}")
                 append(os.path.join(LOG_DIR, 'Validation loss.txt'),
                        f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}" + '\n')
+                append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
+                       f"EPISODE {episode}/{num_episodes}, Validation MAE: {mae_val}" + '\n')
                 del global_map_val_episode
 
             episode += 1
@@ -155,7 +157,12 @@ def train(train_subseqs, validation_subseq):
     plot_metric(mae_training, "Training MAE", visualize=VISUALIZE, log_dir=LOG_DIR)
     plot_metric(rmse_validation, "Validation RMSE", visualize=VISUALIZE, log_dir=LOG_DIR, val_scaling=VALIDATION_EPISODE)
     plot_metric(mae_validation, "Validation MAE", visualize=VISUALIZE, log_dir=LOG_DIR, val_scaling=VALIDATION_EPISODE)
-
+    print(f"Best validation loss on episode {torch.argmin(torch.tensor(loss_validation)) * VALIDATION_EPISODE}")
+    print(f"Best validation mae on episode {torch.argmin(torch.tensor(mae_validation)) * VALIDATION_EPISODE}")
+    append(os.path.join(LOG_DIR, 'Validation loss.txt'),
+           f"Best validation loss on episode {torch.argmin(torch.tensor(loss_validation)) * VALIDATION_EPISODE}" + '\n')
+    append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
+           f"Best validation mae on episode {torch.argmin(torch.tensor(mae_validation)) * VALIDATION_EPISODE}" + '\n')
     return model
 
 
@@ -220,15 +227,17 @@ def test(subseqs, model, max_clouds=4, dsratio=4):
 
 
 def main():
-    train_subseqs = ["2011_09_26_drive_0086_sync", "2011_09_26_drive_0009_sync", "2011_09_28_drive_0187_sync",
+    train_subseqs = ["2011_09_26_drive_0086_sync", "2011_09_28_drive_0187_sync", "2011_09_28_drive_0087_sync",
                      "2011_09_28_drive_0122_sync", "2011_09_26_drive_0051_sync", "2011_10_03_drive_0034_sync",
                      "2011_09_28_drive_0094_sync", "2011_09_30_drive_0018_sync", "2011_09_28_drive_0095_sync",
                      "2011_09_26_drive_0117_sync", "2011_09_26_drive_0057_sync", "2011_09_28_drive_0075_sync",
                      "2011_09_28_drive_0145_sync", "2011_09_28_drive_0220_sync", "2011_09_26_drive_0101_sync",
                      "2011_09_28_drive_0098_sync", "2011_09_28_drive_0167_sync", "2011_10_03_drive_0042_sync",
-                     "2011_09_26_drive_0027_sync", "2011_09_28_drive_0198_sync", "2011_09_26_drive_0011_sync"]
+                     "2011_09_26_drive_0027_sync", "2011_09_28_drive_0198_sync", "2011_09_26_drive_0011_sync",
+                     "2011_09_26_drive_0096_sync", "2011_09_28_drive_0171_sync", "2011_09_30_drive_0018_sync",
+                     "2011_09_28_drive_0141_sync"]
     validation_subseq = "2011_09_28_drive_0168_sync"
-    test_subseqs = ["2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync"]
+    test_subseqs = ["2011_09_26_drive_0009_sync", "2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync"]
     assert not any(x in test_subseqs for x in train_subseqs)
     assert validation_subseq not in train_subseqs and validation_subseq not in test_subseqs
     if TRAIN:
@@ -247,3 +256,8 @@ if __name__ == '__main__':
     # TODO:
     #   Make separate singularity image for gradslam?
     #   --> train on server with gt and test locally with gradicp
+    #   try resizing image, add as an argument to dataset, use opencv for example, before we use them - do this
+    #   deep depth denoising - depth regularization, at leat mention this paper in the introduction
+    #   try finding parts of map where the slam works
+    #   train model agin, get some better results
+    #   start adding experiment results - different sequences, sparse, dense, pred + add metrics for trining and validation
