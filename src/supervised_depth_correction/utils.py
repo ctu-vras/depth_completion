@@ -1,3 +1,4 @@
+import cv2
 import gradslam
 import open3d as o3d
 import matplotlib.pyplot as plt
@@ -6,6 +7,7 @@ import os
 from scipy import interpolate
 import numpy as np
 from .models import SparseConvNet
+from PIL import Image
 
 
 def load_model(path=None):
@@ -123,3 +125,44 @@ def interpolate_missing_pixels(
     interp_image[missing_y, missing_x] = interp_values
 
     return interp_image
+
+
+def save_gradslam_image(img, img_path):
+    """
+    Save depth image from
+    :param img_torch: <torch.tensor> of shape (B, S, H, W, CH)
+    """
+    img = torch.squeeze(img, 0)
+    img = torch.squeeze(img, 0)
+    img = img.cpu().detach().numpy()
+    img *= (2 ** 8)     # shift values range
+    data_pil = Image.fromarray(np.squeeze(img.astype(np.uint16)), mode='I;16').convert(mode='I')
+    data_pil.save(img_path)
+
+
+def convert_img_label(name):
+    default = "0000000000"
+    name = str(name)
+    return default[:-len(name)] + name
+
+
+def complete_sequence(model, dataset, path_to_save, subseq):
+    """
+    Runs depth images through the model and saves them as a KITTI compatible sequence
+    :param path_to_save: path to KITTI depth files (e.g. KITTI/depth/train)
+    """
+    subfolders = [subseq, "proj_depth", "prediction", "image_02"]
+    for subfold in subfolders:
+        path_to_save = os.path.join(path_to_save, subfold)
+        if not os.path.isdir(path_to_save):
+            os.mkdir(path_to_save)
+
+    for i in dataset.ids:
+        img_name = convert_img_label(i) + ".png"
+        img_path = os.path.join(path_to_save, img_name)
+        if os.path.exists(img_path):
+            continue
+        colors, depths, intrinsics, poses = dataset[i]
+        mask = (depths > 0).float()
+        pred = model(depths, mask)
+        save_gradslam_image(pred, img_path)
