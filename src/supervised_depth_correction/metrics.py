@@ -1,25 +1,5 @@
 import torch
-from pytorch3d.loss import chamfer_distance
-from chamferdist import ChamferDistance
 from .transform import *
-
-
-def chamfer_loss(pointclouds, pointclouds_gt, sample_step=1):
-    """
-    pointclouds, pointclouds_gt: <gradslam.structures.pointclouds>
-    computes chamfer distance between two pointclouds
-    :return: <torch.tensor>
-    """
-    pcd = pointclouds.points_list[0]  # get point cloud as torch tensor and transform into correct shape
-    pcd_gt = pointclouds_gt.points_list[0]
-    if sample_step > 1:
-        # randomly unifromly sample pts from clouds with step equal to sample_step
-        pcd = pcd[torch.randint(pcd.shape[0], (pcd.shape[0]//sample_step,)), :]
-        pcd_gt = pcd_gt[torch.randint(pcd_gt.shape[0], (pcd_gt.shape[0] // sample_step,)), :]
-    cd = chamfer_distance(pcd[None], pcd_gt[None])[0]
-    # chamferDist = ChamferDistance()
-    # cd = chamferDist(pcd_gt[None], pcd[None], bidirectional=True)
-    return cd
 
 
 def RMSE(gt, pred, mask=True):
@@ -73,4 +53,4 @@ def localization_accuracy(poses1, poses2):
         delta_T = delta_transform(pose1.squeeze(), pose2.squeeze())
         dist, rot_dist = translation_norm(delta_T), rotation_angle(delta_T)
         err += dist + rot_dist
-    return err
+    return err/len(poses1)

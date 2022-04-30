@@ -5,8 +5,9 @@ from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.io import write, append
-from supervised_depth_correction.utils import load_model
-from supervised_depth_correction.metrics import RMSE, MAE, chamfer_loss, localization_accuracy
+from supervised_depth_correction.utils import load_model, complete_sequence
+from supervised_depth_correction.metrics import RMSE, MAE, localization_accuracy
+from supervised_depth_correction.loss import chamfer_loss
 from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric
 
 
@@ -29,6 +30,7 @@ INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__),
 
 TRAIN = False
 TEST = True
+COMPLETE_SEQS = False
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
@@ -166,62 +168,51 @@ def train(train_subseqs, validation_subseq):
     return model
 
 
-def test(subseqs, model, max_clouds=4, dsratio=4):
+def test_loop(dataset, trajectory_gt, max_clouds, dsratio, test_mode):
+    map, trajectory, depth_sample = construct_map(dataset, max_clouds=max_clouds, dsratio=dsratio, pose_provider='icp')
+    # print("gt:", trajectory_gt)
+    # print("computed:", trajectory)
+    loc_acc = localization_accuracy(trajectory_gt, trajectory)
+    append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Accuracy {test_mode}: {loc_acc}" + '\n')
+    del map, trajectory, depth_sample
+    return loc_acc
+
+
+def test(subseqs, model=None, max_clouds=4, dsratio=4):
     """
     Test if results of trained model are comparable on other subsequences
     """
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
+    path_to_save = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', 'data', 'KITTI', 'depth', 'train'))
 
     for subseq in subseqs:
-        print(f"###### Starting testing of subseq: {subseq} ######")
+        print(f"\n###### Starting testing of subseq: {subseq} ######")
         append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'),
-               f"testing of subseq: {subseq}" + '\n')
-        print("###### Loading data ######")
-        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True, device=DEVICE)
-        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False, device=DEVICE)
-        print("###### Data loaded ######")
+               f"\ntesting of subseq: {subseq}" + '\n')
 
-        print("###### Constructing maps ######")
-        print("GT")
-        global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt, max_clouds=max_clouds, dsratio=dsratio)
-        del dataset_gt
-        plot_pc(global_map_gt, "gt", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
-        print("Sparse")
-        global_map_sparse, traj_sparse, depth_sample_sparse = construct_map(dataset_sparse, max_clouds=max_clouds,
-                                                                            pose_provider='icp', dsratio=dsratio)
-        plot_pc(global_map_gt, "sparse", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
+        print(f"###### Running depth completion on depth data ######")
+        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="raw", device=DEVICE)
+        if model is not None:
+            complete_sequence(model, dataset_sparse, path_to_save, subseq)
+        trajectory_gt = dataset_sparse.get_gt_poses()
+        trajectory_gt = torch.squeeze(trajectory_gt, 0)
+        trajectory_gt = torch.squeeze(trajectory_gt, 0)
+        trajectory_gt = list(trajectory_gt[:max_clouds, :, :])
 
-        print("###### Running testing ######")
-
-        mse_sparse, mae_sparse, locc_acc_sparse = compute_val_metrics(depth_sample_gt, depth_sample_sparse, traj_gt, traj_sparse)
-        chamfer_dist = chamfer_loss(global_map_gt, global_map_sparse, sample_step=5)
-        print(f"MSE sparse: {mse_sparse}")
-        print(f"MAE sparse: {mae_sparse}")
+        locc_acc_sparse = test_loop(dataset_sparse, trajectory_gt, max_clouds, dsratio, "Sparse")
         print(f"Localization accuracy sparse: {locc_acc_sparse}")
-        print(f"Chamfer distance sparse: {chamfer_dist}")
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"MSE sparse: {mse_sparse}" + '\n')
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"MAE sparse: {mae_sparse}" + '\n')
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Chamfer distance sparse: {chamfer_dist}" + '\n')
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Localization accuracy sparse: {locc_acc_sparse}" + '\n')
+        del dataset_sparse
 
-        print("Pred")
-        del global_map_sparse
-        global_map_pred, traj_pred, depth_sample_pred = construct_map(dataset_sparse, model, max_clouds=max_clouds,
-                                                                      pose_provider='icp', dsratio=dsratio)
-        plot_pc(global_map_pred, "pred", f"testing-{subseq}", visualize=VISUALIZE, log_dir=LOG_DIR)
-        mse_pred, mae_pred, locc_acc_pred = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_pred)
-        chamfer_dist = chamfer_loss(global_map_gt, global_map_pred, sample_step=5)
-        print(f"MSE pred: {mse_pred}")
-        print(f"MAE pred: {mae_pred}")
-        print(f"Localization accuracy pred: {locc_acc_pred}")
-        print(f"Chamfer distance pred: {chamfer_dist}")
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"-----------\nMSE pred: {mse_pred}" + '\n')
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"MAE pred: {mae_pred}" + '\n')
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Chamfer distance pred: {chamfer_dist}" + '\n')
-        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Localization accuracy pred: {locc_acc_pred}" + '\n\n\n')
+        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="gt", device=DEVICE)
+        locc_acc_gt = test_loop(dataset_gt, trajectory_gt, max_clouds, dsratio, "Groundruth")
+        print(f"Localization accuracy groundtruth: {locc_acc_gt}")
+        del dataset_gt
 
-        del dataset_sparse, global_map_gt, global_map_pred
+        dataset_pred = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="pred", device=DEVICE)
+        locc_acc_pred = test_loop(dataset_pred, trajectory_gt, max_clouds, dsratio, "Prediction")
+        print(f"Localization accuracy prediction: {locc_acc_pred}")
+        del dataset_pred, trajectory_gt
 
     print("###### TESTING DONE ######")
 
@@ -242,13 +233,14 @@ def main():
     assert validation_subseq not in train_subseqs and validation_subseq not in test_subseqs
     if TRAIN:
         model = train(train_subseqs, validation_subseq)
-    else:
-        # model = load_model(os.path.join("..", "config", "results", "weights", "weights-980.pth"))
+    elif TEST and COMPLETE_SEQS:
         model = load_model(INIT_MODEL_STATE_DICT)
         model = model.to(DEVICE)
         model = model.eval()
+    else:
+        model = None
     if TEST:
-        test(test_subseqs, model, max_clouds=4, dsratio=4)
+        test(test_subseqs, model=model, max_clouds=30, dsratio=4)
 
 
 if __name__ == '__main__':
@@ -261,3 +253,8 @@ if __name__ == '__main__':
     #   try finding parts of map where the slam works
     #   train model agin, get some better results
     #   start adding experiment results - different sequences, sparse, dense, pred + add metrics for trining and validation
+    #   add also desnse gt map with icp, compare to gt trajectory
+    #   try training model with MSE loss as weel
+    #   try to visualize in ros
+    #   first try if result make sence
+    #   second try diffenrent loss

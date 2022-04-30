@@ -318,7 +318,7 @@ class Dataset:
         return data
 
     def get_gt_poses(self):
-        return self.poses
+        return torch.as_tensor(self.poses[None][None], dtype=torch.float32).to(self.device)
 
 
 def poses_demo():
