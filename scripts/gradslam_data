@@ -57,7 +57,7 @@ class GradslamROS:
     def __init__(self, subseq: str = ''):
         self.device = torch.device(rospy.get_param('~device', 'cuda:0'))
         # self.slam = PointFusion(odom=rospy.get_param('~odometry', 'gt'), dsratio=1, device=self.device)
-        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'icp'), dsratio=1, device=self.device)
+        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'gradicp'), dsratio=1, device=self.device)
         self.pointclouds = Pointclouds(device=self.device)
         self.current_pose = None
         self.rgbd_img = None
@@ -124,7 +124,7 @@ class GradslamROS:
         # rospy.loginfo("Localization accuracy, position: %.3f [m]" % trans_delta)
         # rospy.loginfo("Localization accuracy, orientation: %.3f [rad]" % rot_delta)
 
-        delta_pose = delta_transform(self.poses_gt[len(self.poses)], self.poses[-1])
+        delta_pose = delta_transform(self.poses_gt[len(self.poses)-1], self.poses[-1])
         self.path_len += translation_norm(delta_pose)
         trans_delta = translation_norm(delta_pose)
         # rot_delta = rotation_angle(delta_pose)
