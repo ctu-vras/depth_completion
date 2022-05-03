@@ -4,9 +4,9 @@
     <arg name="odom" default="gt" doc="Odometry provider in GradSLAM: ['gt', 'icp', 'gradicp']"/>
     <arg name="device" default="cpu" doc="Device to run tensor operations on: cpu or cuda"/>
     <arg name="depth_completion" default="false" doc="Use depth completion model before SLAM input or not"/>
-    <arg name="gt_depth" default="false" doc="Use ground truth depth clouds or sparse lidar clouds from KITTI Depth.
-                                              It doesn't make sense to set this argument to 'true'
-                                              when 'depth_completion' is also set to 'true'"/>
+    <arg name="depth_type" default="sparse" doc="Use ground truth depth clouds 'dense' or 'sparse' lidar clouds from KITTI Depth.
+                                                 It doesn't make sense to set this argument to 'dense'
+                                                 when 'depth_completion' is also set to 'true'"/>
     <arg name="kitti_sequence" default="2011_09_26_drive_0009_sync" doc="Sequence name from KITTI Depth dataset"/>
 
     <!-- GradSLAM step inference on KITTI depth data -->
@@ -15,7 +15,7 @@
             odometry: $(arg odom)
             device: $(arg device)
             depth_completion: $(arg depth_completion)
-            gt_depth: $(arg gt_depth)
+            depth_type: $(arg depth_type)
             kitti_sequence: $(arg kitti_sequence)
         </rosparam>
     </node>

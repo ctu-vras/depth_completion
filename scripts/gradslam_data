@@ -9,6 +9,7 @@ from gradslam import Pointclouds, RGBDImages
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.utils import load_model
 from supervised_depth_correction.metrics import localization_accuracy
+from supervised_depth_correction.transform import translation_norm, rotation_angle, delta_transform
 # ROS
 import rospy
 from sensor_msgs.msg import CameraInfo, PointCloud2
@@ -56,20 +57,25 @@ class GradslamROS:
     def __init__(self, subseq: str = ''):
         self.device = torch.device(rospy.get_param('~device', 'cuda:0'))
         # self.slam = PointFusion(odom=rospy.get_param('~odometry', 'gt'), dsratio=1, device=self.device)
-        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'gt'), dsratio=1, device=self.device)
+        self.slam = ICPSLAM(odom=rospy.get_param('~odometry', 'icp'), dsratio=1, device=self.device)
         self.pointclouds = Pointclouds(device=self.device)
-        self.live_frame = None
-        self.route = Path()
+        self.current_pose = None
+        self.rgbd_img = None
         self.world_frame = 'world'
         self.camera_frame = 'camera'
-        self.route.header.frame_id = self.world_frame
-        self.route_pub = rospy.Publisher('~route', Path, queue_size=2)
+        self.path = Path()
+        self.path.header.frame_id = self.world_frame
+        self.path_gt = Path()
+        self.path_gt.header.frame_id = self.world_frame
+        self.path_len = 0.0
+        self.path_pub = rospy.Publisher('~path', Path, queue_size=2)
+        self.path_gt_pub = rospy.Publisher('~path_gt', Path, queue_size=2)
         self.pc_pub = rospy.Publisher('~cloud', PointCloud2, queue_size=1)
         self.caminfo_pub = rospy.Publisher('~frustum', CameraInfo, queue_size=1)
         self.map_step = rospy.get_param('~map_step', 4)
         self.camera = rospy.get_param('~camera', 'left')  # 'right', 'left'
         self.ds = Dataset(subseq,
-                          depth_type=rospy.get_param('~depth_type', "raw"),
+                          depth_type=rospy.get_param('~depth_type', "sparse"),
                           camera=self.camera,
                           zero_origin=False,
                           device=self.device)
@@ -77,17 +83,13 @@ class GradslamROS:
         self.period = rospy.get_param('~period', 1.0)
         self.index = 0
         self.ds_step = 1
-        self.device = torch.device(rospy.get_param('~device', 'cpu'))
         self.depth_completion = rospy.get_param('~depth_completion', False)
         self.dc_model = load_model(rospy.get_param('~dc_model_path',
                                                    os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-539.pth'))))
         self.dc_model.to(self.device)
         self.dc_model.eval()
-        self.gt_poses = self.ds.get_gt_poses()
-        self.gt_poses = torch.squeeze(self.gt_poses, 0)
-        self.gt_poses = torch.squeeze(self.gt_poses, 0)
-        self.gt_poses = list(self.gt_poses.to(self.device))
-        self.computed_poses = []
+        self.poses_gt = list(self.ds.get_gt_poses().squeeze().to(self.device))
+        self.poses = list()
         self.timer = rospy.Timer(rospy.Duration(self.delay_start), self.start_timer, oneshot=True)
 
     def start_timer(self, evt):
@@ -108,22 +110,32 @@ class GradslamROS:
             with torch.no_grad():
                 depths = self.dc_model(depths, mask=(depths > 0).float())
 
-        live_frame = RGBDImages(colors, depths, intrinsics, poses)
-        self.pointclouds, live_frame.poses = self.slam.step(self.pointclouds, live_frame, self.live_frame)
+        rgbd_img = RGBDImages(colors, depths, intrinsics, poses)
+        self.pointclouds, rgbd_img.poses = self.slam.step(self.pointclouds, rgbd_img, self.rgbd_img)
 
-        self.live_frame = live_frame
-        pose = torch.squeeze(live_frame.poses, 0)
-        pose = torch.squeeze(pose, 0)
-        self.computed_poses.append(pose)
+        self.rgbd_img = rgbd_img
+        self.current_pose = rgbd_img.poses.squeeze()
+        self.poses.append(self.current_pose)
         rospy.logdebug(f'Point cloud shape: {self.pointclouds.points_list[0].shape}')
-        rospy.logdebug(f"Localization accuracy: {self.compute_localization_accuracy()}")
 
     def compute_localization_accuracy(self):
-        return localization_accuracy(self.gt_poses[:len(self.computed_poses)], self.computed_poses)
+        # trans_delta, rot_delta = localization_accuracy(self.poses_gt[:len(self.poses)],
+        #                                                self.poses, trans_rot_combined=False)
+        # rospy.loginfo("Localization accuracy, position: %.3f [m]" % trans_delta)
+        # rospy.loginfo("Localization accuracy, orientation: %.3f [rad]" % rot_delta)
+
+        delta_pose = delta_transform(self.poses_gt[len(self.poses)], self.poses[-1])
+        self.path_len += translation_norm(delta_pose)
+        trans_delta = translation_norm(delta_pose)
+        # rot_delta = rotation_angle(delta_pose)
+        rospy.logdebug('Odometry error at pos. %i: %.3f m (%.1f %%)', self.index,
+                       trans_delta, 100. * trans_delta / self.path_len if self.path_len > 0. else 0.)
 
     def run(self, evt):
         self.slam_step()
+        self.compute_localization_accuracy()
         self.publish_path()
+        self.publish_gt_path()
         self.publish_cloud()
         # self.publish_camera_info()
         self.move()
@@ -132,21 +144,31 @@ class GradslamROS:
         camera_info = CameraInfo()
         camera_info.header.frame_id = self.camera_frame
         camera_info.header.stamp = rospy.Time.now()
-        camera_info.width = self.live_frame.rgb_image.shape[-2]
-        camera_info.height = self.live_frame.rgb_image.shape[-3]
-        camera_info.K = self.live_frame.intrinsics.squeeze()[:3, :3].cpu().numpy().flatten().tolist()
+        camera_info.width = self.current_pose.rgb_image.shape[-2]
+        camera_info.height = self.current_pose.rgb_image.shape[-3]
+        camera_info.K = self.current_pose.intrinsics.squeeze()[:3, :3].cpu().numpy().flatten().tolist()
         camera_info.distortion_model = distortion_model
         self.caminfo_pub.publish(camera_info)
         return camera_info
 
     def publish_path(self):
-        assert self.live_frame.poses.shape == (1, 1, 4, 4)
-        pose = matrix_to_pose_msg(self.live_frame.poses.squeeze().cpu().numpy())
-        publish_tf_pose(pose, child_frame_id=self.camera_frame)
-        self.route.poses.append(pose)
-        self.route.header.stamp = rospy.Time.now()
-        self.route_pub.publish(self.route)
+        assert self.current_pose.shape == (4, 4)
+        pose_msg = matrix_to_pose_msg(self.current_pose.cpu().numpy())
+        publish_tf_pose(pose_msg, child_frame_id=self.camera_frame)
+        self.path.poses.append(pose_msg)
+        self.path.header.stamp = rospy.Time.now()
+        self.path_pub.publish(self.path)
         rospy.logdebug('Published path')
+
+    def publish_gt_path(self, n_up_to=None):
+        if not n_up_to:
+            n_up_to = len(self.path.poses)
+        pose_msg = matrix_to_pose_msg(self.poses_gt[n_up_to - 1].cpu().numpy())
+        publish_tf_pose(pose_msg, child_frame_id=self.camera_frame+'_gt')
+        self.path_gt.poses.append(pose_msg)
+        self.path_gt.header.stamp = rospy.Time.now()
+        self.path_gt_pub.publish(self.path_gt)
+        rospy.logdebug('Published ground truth path')
 
     def publish_cloud(self):
         # publish point cloud
