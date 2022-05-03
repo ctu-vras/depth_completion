@@ -91,7 +91,7 @@ def matrix_to_xyz_axis_angle(T):
 
 def rotation_angle(T):
     R = T[:-1, :-1]
-    angle = torch.arccos((torch.trace(R) - 1.0) / 2.0).item()
+    angle = torch.arccos(torch.clamp((torch.trace(R) - 1.0) / 2.0, 0, 1)).item()
     return angle
 
 
