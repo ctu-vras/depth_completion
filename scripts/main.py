@@ -13,7 +13,7 @@ from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric
 
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
-CUDA_DEVICE = 0
+CUDA_DEVICE = 3
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 # DEVICE = torch.device('cpu')
 
@@ -66,22 +66,25 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=7, step=1, 
     return pointclouds, trajectory, depths
 
 
-def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, val=False):
+def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, episode_num=0, val=False, plot=False):
     loss_episode = 0
     mae_episode = 0
     for i in range(len(dataset_gt)):
+        optimizer.zero_grad()
         colors_gt, depths_gt, intrinsics_gt, poses_gt = dataset_gt[i]
         colors_sparse, depths_sparse, intrinsics_sparse, poses_sparse = dataset_sparse[i]
         mask = (depths_sparse > 0).float()
         depths_pred = predictor(depths_sparse, mask)
-        loss = ( criterion(depths_pred, depths_gt) * mask.detach() ).sum() / mask.sum()
+        loss = (criterion(depths_pred, depths_gt) * mask.detach()).sum() / mask.sum()
         if not val:
             loss.backward()
             optimizer.step()
-        loss_episode += loss.item()
-        mae = MAE(depths_gt, depths_pred)
+        loss_episode += loss.detach().item()
+        mae = MAE(depths_gt.detach(), depths_pred.detach())
         mae_episode += mae
-
+    if plot:
+        plot_depth(depths_sparse, depths_pred, depths_gt, "training", episode_num,
+                   visualize=VISUALIZE, log_dir=LOG_DIR)
     return loss_episode / len(dataset_gt.ids), mae_episode / len(dataset_gt.ids)
 
 
@@ -225,7 +228,12 @@ def train_MSE(train_subseqs, validation_subseq):
 
         print("###### Running episodes  ######")
         for e in range(EPISODES_PER_SEQ):
-            loss, mae = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion, optimizer=optimizer)
+            if episode + 1 == num_episodes or episode % (num_episodes // len(train_subseqs)) == 0:
+                loss, mae = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion, episode_num=episode,
+                                        optimizer=optimizer, val=False, plot=True)
+            else:
+                loss, mae = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion,
+                                        optimizer=optimizer, val=False)
             loss_training.append(loss)
             mae_training.append(mae)
             print(f"EPISODE {episode}/{num_episodes}, loss: {loss}")
@@ -234,7 +242,7 @@ def train_MSE(train_subseqs, validation_subseq):
             if episode + 1 == num_episodes or episode % VALIDATION_EPISODE == 0:
                 torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
                 loss_val, mae_val = episode_mse(dataset_val_gt, dataset_val_sparse, model, criterion=criterion,
-                                                optimizer=optimizer, val=False)
+                                                optimizer=optimizer, val=True)
                 loss_validation.append(loss_val)
                 mae_validation.append(mae_val)
                 print(f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}")
@@ -346,15 +354,4 @@ def main():
 if __name__ == '__main__':
     main()
     # TODO:
-    #   Make separate singularity image for gradslam?
-    #   --> train on server with gt and test locally with gradicp
-    #   try resizing image, add as an argument to dataset, use opencv for example, before we use them - do this
-    #   deep depth denoising - depth regularization, at leat mention this paper in the introduction
-    #   try finding parts of map where the slam works
-    #   train model agin, get some better results
-    #   start adding experiment results - different sequences, sparse, dense, pred + add metrics for trining and validation
-    #   add also desnse gt map with icp, compare to gt trajectory
-    #   try training model with MSE loss as weel
-    #   try to visualize in ros
-    #   first try if result make sence
-    #   second try diffenrent loss
+    #   improve point/depth image cloud filtering
