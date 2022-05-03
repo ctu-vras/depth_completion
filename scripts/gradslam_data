@@ -68,7 +68,11 @@ class GradslamROS:
         self.caminfo_pub = rospy.Publisher('~frustum', CameraInfo, queue_size=1)
         self.map_step = rospy.get_param('~map_step', 4)
         self.camera = rospy.get_param('~camera', 'left')  # 'right', 'left'
-        self.ds = Dataset(subseq, depth_type=rospy.get_param('~depth_type', "raw"), camera=self.camera, zero_origin=False)
+        self.ds = Dataset(subseq,
+                          depth_type=rospy.get_param('~depth_type', "raw"),
+                          camera=self.camera,
+                          zero_origin=False,
+                          device=self.device)
         self.delay_start = rospy.get_param('~delay_start', 1.0)
         self.period = rospy.get_param('~period', 1.0)
         self.index = 0
@@ -97,10 +101,6 @@ class GradslamROS:
 
     def slam_step(self):
         colors, depths, intrinsics, poses = self.ds[self.index * self.ds_step]
-        colors = colors.to(self.device)
-        depths = depths.to(self.device)
-        intrinsics = intrinsics.to(self.device)
-        poses = poses.to(self.device)
 
         # depth completion model forward pass
         if self.dc_model is not None and self.depth_completion:

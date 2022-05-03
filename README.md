@@ -109,7 +109,7 @@ Running GradSLAM on a KITTI Depth sequence with the following configurations:
 
 - odometry provider used in GradSLAM is set to ground truth poses from data set,
 - depth completion model is used to construct from sparse clouds local maps and provide them for the SLAM,
-- sparse clouds from KITTI Depts are used as input to depth completion model,
+- sparse clouds from KITTI Depths are used as input to depth completion model,
 - the pipeline is running on GPU.
 
 ```bash
