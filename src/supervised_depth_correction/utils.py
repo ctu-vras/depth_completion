@@ -127,6 +127,15 @@ def interpolate_missing_pixels(
     return interp_image
 
 
+def filter_depth_outliers(depths):
+    """
+    Filters out points that are too close or too far away from camera
+    """
+    depths[depths < 2] = float('nan')
+    depths[depths > 15] = float('nan')
+    return depths
+
+
 def save_gradslam_image(img, img_path):
     """
     Save depth image from
