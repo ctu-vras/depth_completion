@@ -113,7 +113,7 @@ Running GradSLAM on a KITTI Depth sequence with the following configurations:
 - the pipeline is running on GPU.
 
 ```bash
-roslaunch supervised_depth_correction gradslam_kitti.launch odom:=gt depth_completion:=1 gt_depth:=0 device:='cuda:0'
+roslaunch supervised_depth_correction gradslam_kitti.launch odom:=gt depth_completion:=1 depth_type:=sparse device:='cuda:0'
 ```
 
 More details about the argument usage are provided in the corresponding
