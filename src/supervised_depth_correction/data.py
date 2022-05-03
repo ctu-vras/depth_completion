@@ -29,11 +29,7 @@ sequence_names = [
 
 class KITTIRaw(object):
 
-    def __init__(self, subseq, path=None):
-        if path is None:
-            seq = subseq[:10]
-            path = os.path.join(RAW_DATA_DIR, seq)
-
+    def __init__(self, subseq):
         self.data = pykitti.raw(RAW_DATA_DIR, date=subseq[:10], drive=subseq[-9:-5])
         self.poses = self.get_cam_poses()
         self.ts = self.get_timestamps()
@@ -89,8 +85,7 @@ class KITTIRaw(object):
         return len(self.ids)
 
     def __getitem__(self, i):
-        assert i in self.ids
-        return self.poses[i]
+        return self.poses[self.ids[i]]
 
     def __iter__(self):
         for i in range(len(self)):
@@ -101,9 +96,9 @@ class KITTIDepth:
     """
     RGB-D data from KITTI depth: http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion
     """
-    def __init__(self, subseq=None, mode='train', path=None, camera="left", depth_type="raw"):
+    def __init__(self, subseq=None, mode='train', path=None, camera="left", depth_type="sparse"):
         assert mode == 'train' or mode == 'val'
-        assert depth_type == "raw" or depth_type == "gt" or depth_type == "pred"
+        assert depth_type == "sparse" or depth_type == "dense" or depth_type == "pred"
         if path is None:
             path = os.path.join(DEPTH_DATA_DIR, mode, subseq)
         self.path = path
@@ -128,9 +123,9 @@ class KITTIDepth:
         Returns:
             depth: np.array, depth image
         """
-        if self.depth_type == "gt":
+        if self.depth_type == "dense":
             depth_folder = 'groundtruth'
-        elif self.depth_type == "raw":
+        elif self.depth_type == "sparse":
             depth_folder = 'velodyne_raw'
         else:
             depth_folder = 'prediction'
@@ -155,9 +150,9 @@ class KITTIDepth:
 
     def get_ids(self):
         ids = list()
-        if self.depth_type == "gt":
+        if self.depth_type == "dense":
             depth_label = 'groundtruth'
-        elif self.depth_type == "raw":
+        elif self.depth_type == "sparse":
             depth_label = 'velodyne_raw'
         else:
             depth_label = 'prediction'
@@ -211,9 +206,9 @@ class KITTIDepthSelection(KITTIDepth):
         disp(u,v)  = ((float)I(u,v))/256.0;
         valid(u,v) = I(u,v)>0;
         """
-        if self.depth_type == "gt":
+        if self.depth_type == "dense":
             depth_folder = 'groundtruth'
-        elif self.depth_type == "raw":
+        elif self.depth_type == "sparse":
             depth_folder = 'velodyne_raw'
         else:
             depth_folder = 'prediction'
@@ -234,9 +229,9 @@ class KITTIDepthSelection(KITTIDepth):
 
     def get_ids(self):
         ids = list()
-        if self.depth_type == "gt":
+        if self.depth_type == "dense":
             depth_label = 'groundtruth'
-        elif self.depth_type == "raw":
+        elif self.depth_type == "sparse":
             depth_label = 'velodyne_raw'
         else:
             depth_label = 'prediction'
@@ -251,12 +246,10 @@ class KITTIDepthSelection(KITTIDepth):
 class Dataset:
     def __init__(self, subseq,
                  selection=False,
-                 depth_type="raw",
+                 depth_type="sparse",
                  depth_set='train',
                  camera='left',
                  zero_origin=True,
-                 width=None,
-                 height=None,
                  device=torch.device('cpu')):
         self.ds_poses = KITTIRaw(subseq=subseq)
         if selection:
@@ -265,8 +258,6 @@ class Dataset:
             self.ds_depths = KITTIDepth(subseq=subseq, depth_type=depth_type, mode=depth_set, camera=camera)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
-        self.width = width
-        self.height = height
 
         # move poses to origin to 0:
         if zero_origin:
@@ -290,25 +281,11 @@ class Dataset:
                   intrinsics: torch.Tensor (B x N x 4 x 4)
                   poses: torch.Tensor (B x N x 4 x 4)
         """
-        item = i if i in self.ids else self.ids[i]
-        assert item in self.ids
-        colors, depths, K = self.ds_depths[item]
-
-        # TODO: change size of images and intrinsics matrix
-        # if self.width and self.height:
-        #     h, w = colors.shape[:2]
-        #     scale = self.width / w
-        #     colors = cv2.cv2.resize(colors, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        #     depths = cv2.cv2.resize(depths, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        #     depths = np.asarray(depths).reshape([depths.shape[0], depths.shape[1], 1])
-        #     K[0, 0] *= scale
-        #     K[1, 1] *= scale
-        #     K[0, 2] *= scale
-        #     K[1, 2] *= scale
+        colors, depths, K = self.ds_depths[self.ids[i]]
 
         # for p1, p2 in zip(self.poses, self.ds_poses.poses):
         #     assert np.allclose(p1, p2)
-        poses = self.poses[item]
+        poses = self.poses[i]
 
         intrinsics = np.eye(4)
         intrinsics[:3, :3] = K
@@ -335,19 +312,19 @@ def poses_demo():
 
     plt.figure()
     plt.title("%s" % subseq)
-    # plt.subplot(1, 2, 1)
+    plt.subplot(1, 2, 1)
     plt.plot(xs, ys, '.')
     plt.grid()
     plt.xlabel('X [m]')
     plt.ylabel('Y [m]')
     plt.axis('equal')
 
-    # plt.subplot(1, 2, 2)
-    # plt.xlabel('time [sec]')
-    # plt.ylabel('Z [m]')
-    # plt.plot(ds.ts, zs, '.')
-    # plt.grid()
-    # plt.axis('equal')
+    plt.subplot(1, 2, 2)
+    plt.xlabel('time [sec]')
+    plt.ylabel('Z [m]')
+    plt.plot(ds.ts, zs, '.')
+    plt.grid()
+    plt.axis('equal')
     plt.show()
 
 
@@ -398,7 +375,7 @@ def depth_demo():
 
     global_map = list()
     # using poses convert pcs to one coord frame, create and visualize map
-    for i in tqdm(ds.ids[::2]):
+    for i in tqdm(range(0, len(ds), 5)):
         rgb_img_raw, depth_img_raw, K, pose = ds[i]
 
         rgb_img_raw = np.asarray(rgb_img_raw.cpu().numpy().squeeze(), dtype=np.uint8)
@@ -437,13 +414,14 @@ def gradslam_demo():
                "2011_09_26_drive_0009_sync",
                "2011_09_26_drive_0011_sync",
                "2011_09_26_drive_0018_sync",
-               "2011_09_30_drive_0016_sync"
+               "2011_09_30_drive_0027_sync"
                ]
     # np.random.seed(135)
-    # subseq = np.random.choice(subseqs, 1)[0]
-    subseq = subseqs[2]
+    subseq = np.random.choice(subseqs, 1)[0]
+    # subseq = subseqs[4]
+    print('Sequence name: %s' % subseq)
 
-    ds = Dataset(subseq, gt=True, depth_set='train', width=621, height=187, zero_origin=False)
+    ds = Dataset(subseq, depth_type='dense', depth_set='train', zero_origin=False)
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     pose_provider = 'gt'
     assert pose_provider == 'gt' or pose_provider == 'icp' or pose_provider == 'gradicp'
@@ -453,7 +431,7 @@ def gradslam_demo():
     prev_frame = None
     pointclouds = Pointclouds(device=device)
 
-    for i in tqdm(ds.ids[::5]):
+    for i in tqdm(range(0, len(ds), 5)):
         colors, depths, intrinsics, poses = ds[i]
 
         live_frame = RGBDImages(colors, depths, intrinsics, poses).to(device)
@@ -469,7 +447,7 @@ def gradslam_demo():
     # visualize using open3d
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].detach().cpu())
-    o3d.visualization.draw_geometries([pcd])
+    o3d.visualization.draw_geometries([pcd.voxel_down_sample(voxel_size=0.5)])
 
 
 def main():
