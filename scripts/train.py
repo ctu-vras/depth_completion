@@ -16,7 +16,7 @@ Model aims to convert sparse depth images into dense ones
 CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 EPISODES = 1000
-USE_DEPTH_SELECTION = True
+USE_DEPTH_SELECTION = False
 LR = 0.001
 WEIGHT_DECAY = 0.01
 VISUALIZE = False
@@ -25,10 +25,10 @@ VISUALIZE = False
 def main():
     # prepare datasets, model and optimizer
     print("###### Loading data ######")
-    subseq = "2011_09_26_drive_0002_sync"
-    dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True)
-    dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False)
-    data_len = len(dataset_gt.ids)
+    subseq = "2011_09_26_drive_0001_sync"
+    dataset_dense = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense")
+    dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse")
+    data_len = len(dataset_dense.ids)
     # model = DnCNN_c(channels=1, num_of_layers=17)
     print("###### Data loaded ######")
     print("###### Setting up training ######")
@@ -45,8 +45,8 @@ def main():
     # learning loop
     for episode in range(EPISODES+1):
         loss_episode = []
-        for i in dataset_gt.ids:
-            rgb_img_gt, depth_img_gt, K, pose = dataset_gt[i]
+        for i in range(len(dataset_dense)):
+            rgb_img_gt, depth_img_gt, K, pose = dataset_dense[i]
             rgb_img_gt, depth_img_sparse, K, pose = dataset_sparse[i]
             #print(torch.sum(depth_img_sparse), torch.sum(depth_img_gt))
             depth_img_gt = depth_img_gt.to(DEVICE)

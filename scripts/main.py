@@ -44,7 +44,7 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=7, step=1, 
 
     # TODO: check memory issue
     depths = None
-    for i in ds.ids[:max_clouds:step]:
+    for i in range(0, max_clouds, step):
         colors, depths, intrinsics, poses = ds[i]
 
         # do forward pass
@@ -69,7 +69,7 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=7, step=1, 
 def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, val=False):
     loss_episode = 0
     mae_episode = 0
-    for i in dataset_gt.ids:
+    for i in range(len(dataset_gt)):
         colors_gt, depths_gt, intrinsics_gt, poses_gt = dataset_gt[i]
         colors_sparse, depths_sparse, intrinsics_sparse, poses_sparse = dataset_sparse[i]
         mask = (depths_sparse > 0).float()
@@ -212,16 +212,16 @@ def train_MSE(train_subseqs, validation_subseq):
         os.makedirs(LOG_DIR)
 
     print("Loading validation sequence")
-    dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="gt",
+    dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="dense",
                              device=DEVICE)
-    dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="raw",
+    dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse",
                                  device=DEVICE)
 
     for subseq in train_subseqs:
         print(f"###### Starting training on subseq: {subseq} ######")
         print("###### Loading data ######")
-        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="gt", device=DEVICE)
-        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="raw", device=DEVICE)
+        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
+        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse", device=DEVICE)
 
         print("###### Running episodes  ######")
         for e in range(EPISODES_PER_SEQ):
@@ -286,7 +286,7 @@ def test(subseqs, model=None, max_clouds=4, dsratio=4):
                f"\ntesting of subseq: {subseq}" + '\n')
 
         print(f"###### Running depth completion on depth data ######")
-        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="raw", device=DEVICE)
+        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse", device=DEVICE)
         if model is not None:
             complete_sequence(model, dataset_sparse, path_to_save, subseq)
         trajectory_gt = dataset_sparse.get_gt_poses()
@@ -298,7 +298,7 @@ def test(subseqs, model=None, max_clouds=4, dsratio=4):
         print(f"Localization accuracy sparse: {locc_acc_sparse}")
         del dataset_sparse
 
-        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="gt", device=DEVICE)
+        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
         locc_acc_gt = test_loop(dataset_gt, trajectory_gt, max_clouds, dsratio, "Groundruth")
         print(f"Localization accuracy groundtruth: {locc_acc_gt}")
         del dataset_gt

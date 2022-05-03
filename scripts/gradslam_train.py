@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 from supervised_depth_correction.utils import plot_pc
-from supervised_depth_correction.metrics import chamfer_loss
+from supervised_depth_correction.loss import chamfer_loss
 """
 Demo to show that gradient are propagated through SLAM pipeline with KITTI dataset
 training is dome only on single image for simplicity
@@ -31,8 +31,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_c
 
 def train():
     print("###### Loading data ######")
-    dataset_gt = Dataset(subseq=SUBSEQ, selection=USE_DEPTH_SELECTION, gt=True)
-    dataset_sparse = Dataset(subseq=SUBSEQ, selection=USE_DEPTH_SELECTION, gt=False)
+    dataset_dense = Dataset(subseq=SUBSEQ, selection=USE_DEPTH_SELECTION, depth_type="dense")
+    dataset_sparse = Dataset(subseq=SUBSEQ, selection=USE_DEPTH_SELECTION, depth_type="sparse")
     print("###### Data loaded ######")
 
     print("###### Setting up training ######")
@@ -49,8 +49,8 @@ def train():
     for episode in range(EPISODES + 1):
         loss_episode = []
         # for i in dataset_gt.ids:
-        i = dataset_gt.ids[0]   # just to test the process
-        rgb_img_gt, depth_img_gt, K, pose_gt = dataset_gt[i]
+        i = dataset_dense[0]   # just to test the process
+        rgb_img_gt, depth_img_gt, K, pose_gt = dataset_dense[i]
         rgb_img, depth_img_sparse, K, pose = dataset_sparse[i]
 
         depth_img_gt = depth_img_gt.to(DEVICE)
@@ -108,8 +108,8 @@ def train():
             if VISUALIZE:
                 # show plot
                 plt.show()
-                plot_pc(pointclouds)
-                plot_pc(pointclouds_gt)
+                # plot_pc(pointclouds)
+                # plot_pc(pointclouds_gt)
     # END learning loop
 
     # plot training loss over episodes
