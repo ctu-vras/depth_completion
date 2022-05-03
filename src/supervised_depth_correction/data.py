@@ -251,7 +251,7 @@ class KITTIDepthSelection(KITTIDepth):
 class Dataset:
     def __init__(self, subseq,
                  selection=False,
-                 depth_type="sparse",
+                 depth_type="raw",
                  depth_set='train',
                  camera='left',
                  zero_origin=True,

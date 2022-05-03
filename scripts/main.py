@@ -1,6 +1,7 @@
 import os
 import time
 import torch
+import torch.nn as nn
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 from supervised_depth_correction.data import Dataset
@@ -20,21 +21,22 @@ BATCH_SIZE = 1
 LR = 0.001
 WEIGHT_DECAY = 0.01
 
-EPISODES_PER_SEQ = 50
+EPISODES_PER_SEQ = 60
 VISUALIZE = False
 VALIDATION_EPISODE = 5
 
 USE_DEPTH_SELECTION = False
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
-INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-539.pth'))
+INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-1475.pth'))
 
-TRAIN = False
-TEST = True
-COMPLETE_SEQS = False
+TRAIN = True
+TEST = False
+COMPLETE_SEQS = True
+TRAIN_MODE = "mse"      # "mse" or "chamfer"
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
-def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=4, step=1, dsratio=4):
+def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=7, step=1, dsratio=4):
     slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=dsratio)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
@@ -64,6 +66,25 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=4, step=1, 
     return pointclouds, trajectory, depths
 
 
+def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, val=False):
+    loss_episode = 0
+    mae_episode = 0
+    for i in dataset_gt.ids:
+        colors_gt, depths_gt, intrinsics_gt, poses_gt = dataset_gt[i]
+        colors_sparse, depths_sparse, intrinsics_sparse, poses_sparse = dataset_sparse[i]
+        mask = (depths_sparse > 0).float()
+        depths_pred = predictor(depths_sparse, mask)
+        loss = ( criterion(depths_pred, depths_gt) * mask.detach() ).sum() / mask.sum()
+        if not val:
+            loss.backward()
+            optimizer.step()
+        loss_episode += loss.item()
+        mae = MAE(depths_gt, depths_pred)
+        mae_episode += mae
+
+    return loss_episode / len(dataset_gt.ids), mae_episode / len(dataset_gt.ids)
+
+
 def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
     rmse = RMSE(depth_gt, depth_pred)
     mae = MAE(depth_gt, depth_pred)
@@ -72,7 +93,7 @@ def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
 
 
 # ------------------------------------ Learning functions------------------------------------ #
-def train(train_subseqs, validation_subseq):
+def train_chamferdist(train_subseqs, validation_subseq):
     print("###### Setting up training environment ######")
     model = load_model(INIT_MODEL_STATE_DICT)
     model = model.train()
@@ -127,16 +148,19 @@ def train(train_subseqs, validation_subseq):
             # running results save
             if episode + 1 == num_episodes or episode % (num_episodes // len(train_subseqs)) == 0:
                 plot_pc(global_map_episode, episode, "training", visualize=VISUALIZE, log_dir=LOG_DIR)
-                plot_depth(depth_sample_sparse, depth_sample_pred, depth_sample_gt, "training", episode, visualize=VISUALIZE, log_dir=LOG_DIR)
+                plot_depth(depth_sample_sparse, depth_sample_pred, depth_sample_gt, "training", episode,
+                           visualize=VISUALIZE, log_dir=LOG_DIR)
             del global_map_episode
 
             # validation
             if episode + 1 == num_episodes or episode % VALIDATION_EPISODE == 0:
                 torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
-                global_map_val_episode, traj_val_epis, depth_sample_val_pred = construct_map(dataset_val_sparse, predictor=model)
+                global_map_val_episode, traj_val_epis, depth_sample_val_pred = construct_map(dataset_val_sparse,
+                                                                                             predictor=model)
                 loss_val = chamfer_loss(global_map_val_episode, global_map_val_gt, sample_step=5)
                 loss_validation.append(loss_val.detach())
-                rmse_val, mae_val, _ = compute_val_metrics(depth_sample_val_gt, depth_sample_val_pred, traj_val_gt, traj_val_epis)
+                rmse_val, mae_val, _ = compute_val_metrics(depth_sample_val_gt, depth_sample_val_pred, traj_val_gt,
+                                                           traj_val_epis)
                 rmse_validation.append(rmse_val.detach())
                 mae_validation.append(mae_val.detach())
                 print(f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}")
@@ -154,11 +178,83 @@ def train(train_subseqs, validation_subseq):
 
     # plot training metrics over episodes
     plot_metric(loss_training, "Training loss", visualize=VISUALIZE, log_dir=LOG_DIR)
-    plot_metric(loss_validation, "Validation loss", visualize=VISUALIZE, log_dir=LOG_DIR, val_scaling=VALIDATION_EPISODE)
+    plot_metric(loss_validation, "Validation loss", visualize=VISUALIZE, log_dir=LOG_DIR,
+                val_scaling=VALIDATION_EPISODE)
     plot_metric(rmse_training, "Training RMSE", visualize=VISUALIZE, log_dir=LOG_DIR)
     plot_metric(mae_training, "Training MAE", visualize=VISUALIZE, log_dir=LOG_DIR)
-    plot_metric(rmse_validation, "Validation RMSE", visualize=VISUALIZE, log_dir=LOG_DIR, val_scaling=VALIDATION_EPISODE)
+    plot_metric(rmse_validation, "Validation RMSE", visualize=VISUALIZE, log_dir=LOG_DIR,
+                val_scaling=VALIDATION_EPISODE)
     plot_metric(mae_validation, "Validation MAE", visualize=VISUALIZE, log_dir=LOG_DIR, val_scaling=VALIDATION_EPISODE)
+    print(f"Best validation loss on episode {torch.argmin(torch.tensor(loss_validation)) * VALIDATION_EPISODE}")
+    print(f"Best validation mae on episode {torch.argmin(torch.tensor(mae_validation)) * VALIDATION_EPISODE}")
+    append(os.path.join(LOG_DIR, 'Validation loss.txt'),
+           f"Best validation loss on episode {torch.argmin(torch.tensor(loss_validation)) * VALIDATION_EPISODE}" + '\n')
+    append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
+           f"Best validation mae on episode {torch.argmin(torch.tensor(mae_validation)) * VALIDATION_EPISODE}" + '\n')
+    return model
+
+
+def train_MSE(train_subseqs, validation_subseq):
+    print("###### Setting up training environment ######")
+    model = load_model(INIT_MODEL_STATE_DICT)
+    model = model.train()
+    model = model.to(DEVICE)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    criterion = nn.MSELoss()
+    loss_training = []
+    loss_validation = []
+    mae_training = []
+    mae_validation = []
+    episode = 0
+
+    num_episodes = EPISODES_PER_SEQ * len(train_subseqs)
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+
+    print("Loading validation sequence")
+    dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="gt",
+                             device=DEVICE)
+    dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="raw",
+                                 device=DEVICE)
+
+    for subseq in train_subseqs:
+        print(f"###### Starting training on subseq: {subseq} ######")
+        print("###### Loading data ######")
+        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="gt", device=DEVICE)
+        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="raw", device=DEVICE)
+
+        print("###### Running episodes  ######")
+        for e in range(EPISODES_PER_SEQ):
+            loss, mae = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion, optimizer=optimizer)
+            loss_training.append(loss)
+            mae_training.append(mae)
+            print(f"EPISODE {episode}/{num_episodes}, loss: {loss}")
+
+            # validation
+            if episode + 1 == num_episodes or episode % VALIDATION_EPISODE == 0:
+                torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
+                loss_val, mae_val = episode_mse(dataset_val_gt, dataset_val_sparse, model, criterion=criterion,
+                                                optimizer=optimizer, val=False)
+                loss_validation.append(loss_val)
+                mae_validation.append(mae_val)
+                print(f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}")
+                append(os.path.join(LOG_DIR, 'Validation loss.txt'),
+                       f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}" + '\n')
+                append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
+                       f"EPISODE {episode}/{num_episodes}, Validation MAE: {mae_val}" + '\n')
+
+            episode += 1
+        # free up space for next subseq
+        del dataset_sparse, dataset_gt
+        # END learning loop
+
+    # plot training metrics over episodes
+    plot_metric(loss_training, "Training loss", visualize=VISUALIZE, log_dir=LOG_DIR)
+    plot_metric(loss_validation, "Validation loss", visualize=VISUALIZE, log_dir=LOG_DIR,
+                val_scaling=VALIDATION_EPISODE)
+    plot_metric(mae_training, "Training MAE", visualize=VISUALIZE, log_dir=LOG_DIR)
+    plot_metric(mae_validation, "Validation MAE", visualize=VISUALIZE, log_dir=LOG_DIR,
+                val_scaling=VALIDATION_EPISODE)
     print(f"Best validation loss on episode {torch.argmin(torch.tensor(loss_validation)) * VALIDATION_EPISODE}")
     print(f"Best validation mae on episode {torch.argmin(torch.tensor(mae_validation)) * VALIDATION_EPISODE}")
     append(os.path.join(LOG_DIR, 'Validation loss.txt'),
@@ -170,8 +266,6 @@ def train(train_subseqs, validation_subseq):
 
 def test_loop(dataset, trajectory_gt, max_clouds, dsratio, test_mode):
     map, trajectory, depth_sample = construct_map(dataset, max_clouds=max_clouds, dsratio=dsratio, pose_provider='icp')
-    # print("gt:", trajectory_gt)
-    # print("computed:", trajectory)
     loc_acc = localization_accuracy(trajectory_gt, trajectory)
     append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Accuracy {test_mode}: {loc_acc}" + '\n')
     del map, trajectory, depth_sample
@@ -228,11 +322,17 @@ def main():
                      "2011_09_26_drive_0096_sync", "2011_09_28_drive_0171_sync", "2011_09_30_drive_0018_sync",
                      "2011_09_28_drive_0141_sync"]
     validation_subseq = "2011_09_28_drive_0168_sync"
-    test_subseqs = ["2011_09_26_drive_0009_sync", "2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync"]
+    test_subseqs = ["2011_09_26_drive_0009_sync", "2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync",
+                    "2011_10_03_drive_0027_sync"]
     assert not any(x in test_subseqs for x in train_subseqs)
     assert validation_subseq not in train_subseqs and validation_subseq not in test_subseqs
     if TRAIN:
-        model = train(train_subseqs, validation_subseq)
+        if TRAIN_MODE == "mse":
+            model = train_MSE(train_subseqs, validation_subseq)
+        elif TRAIN_MODE == "chamfer":
+            model = train_chamferdist(train_subseqs, validation_subseq)
+        else:
+            print("INVALID TRAIN MODE!!!")
     elif TEST and COMPLETE_SEQS:
         model = load_model(INIT_MODEL_STATE_DICT)
         model = model.to(DEVICE)
