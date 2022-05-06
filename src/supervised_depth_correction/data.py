@@ -387,6 +387,7 @@ def depth_demo():
         w, h = rgb_img_raw.shape[:2]
 
         rgb_img = o3d.geometry.Image(rgb_img_raw)
+        # TODO: correct the depth image creation (depth map is most likely in meters?)
         depth_img = o3d.geometry.Image(np.asarray(depth_img_raw, dtype=np.uint16))
         rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(color=rgb_img, depth=depth_img)
 
