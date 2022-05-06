@@ -9,11 +9,11 @@ from supervised_depth_correction.io import write, append
 from supervised_depth_correction.utils import load_model, complete_sequence
 from supervised_depth_correction.metrics import RMSE, MAE, localization_accuracy
 from supervised_depth_correction.loss import chamfer_loss
-from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric
+from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, filter_depth_outliers
 
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
-CUDA_DEVICE = 3
+CUDA_DEVICE = 0
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 # DEVICE = torch.device('cpu')
 
@@ -27,11 +27,11 @@ VALIDATION_EPISODE = 5
 
 USE_DEPTH_SELECTION = False
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
-INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-1475.pth'))
+INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-415.pth'))
 
-TRAIN = True
-TEST = False
-COMPLETE_SEQS = True
+TRAIN = False
+TEST = True
+COMPLETE_SEQS = True    # True for creating predictions with new model
 TRAIN_MODE = "mse"      # "mse" or "chamfer"
 
 
@@ -296,7 +296,7 @@ def test(subseqs, model=None, max_clouds=4, dsratio=4):
         print(f"###### Running depth completion on depth data ######")
         dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse", device=DEVICE)
         if model is not None:
-            complete_sequence(model, dataset_sparse, path_to_save, subseq)
+            complete_sequence(model, dataset_sparse, path_to_save, subseq, replace=COMPLETE_SEQS)
         trajectory_gt = dataset_sparse.get_gt_poses()
         trajectory_gt = torch.squeeze(trajectory_gt, 0)
         trajectory_gt = torch.squeeze(trajectory_gt, 0)
