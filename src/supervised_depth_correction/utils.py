@@ -3,10 +3,11 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 import torch
 import os
+from PIL import Image
 from scipy import interpolate
 import numpy as np
 from .models import SparseConvNet
-from PIL import Image
+from .metrics import MAE, RMSE
 
 
 def load_model(path=None):
@@ -135,6 +136,20 @@ def filter_depth_outliers(depths):
     return depths
 
 
+def filter_pointcloud_outliers(pc):
+    """
+    Args:
+        pc: <gradslam.Pointclouds> or <torch.Tensor>
+    """
+    assert isinstance(pc, gradslam.Pointclouds)
+    pcd = pc.open3d(0)
+    o3d.visualization.draw_geometries([pcd])
+    pcd = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+    o3d.visualization.draw_geometries([pcd])
+
+    return pcd
+
+
 def save_gradslam_image(img, img_path):
     """
     Save depth image from
@@ -154,7 +169,7 @@ def convert_img_label(name):
     return default[:-len(name)] + name
 
 
-def complete_sequence(model, dataset, path_to_save, subseq):
+def complete_sequence(model, dataset, path_to_save, subseq, replace=False):
     """
     Runs depth images through the model and saves them as a KITTI compatible sequence
     :param path_to_save: path to KITTI depth files (e.g. KITTI/depth/train)
@@ -165,11 +180,13 @@ def complete_sequence(model, dataset, path_to_save, subseq):
         if not os.path.isdir(path_to_save):
             os.mkdir(path_to_save)
 
-    for i in dataset.ids:
-        img_name = convert_img_label(i) + ".png"
+    for i in range(len(dataset)):
+        img_name = convert_img_label(dataset.ids[i]) + ".png"
         img_path = os.path.join(path_to_save, img_name)
-        if os.path.exists(img_path):
+        if os.path.exists(img_path) and not replace:
             continue
+        elif os.path.exists(img_path) and replace:
+            os.remove(img_path)
         colors, depths, intrinsics, poses = dataset[i]
         mask = (depths > 0).float()
         pred = model(depths, mask)
