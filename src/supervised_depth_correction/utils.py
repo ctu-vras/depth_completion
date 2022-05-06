@@ -1,4 +1,3 @@
-import cv2
 import gradslam
 import open3d as o3d
 import matplotlib.pyplot as plt
@@ -175,3 +174,21 @@ def complete_sequence(model, dataset, path_to_save, subseq):
         mask = (depths > 0).float()
         pred = model(depths, mask)
         save_gradslam_image(pred, img_path)
+
+
+def save_preds_demo():
+    from supervised_depth_correction.data import Dataset
+
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    model = load_model(os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-539.pth')))
+    subseq = "2011_09_26_drive_0001_sync"
+    ds = Dataset(subseq, depth_type="sparse", camera="left", zero_origin=False, device=device)
+
+    complete_sequence(model=model,
+                      dataset=ds,
+                      path_to_save=os.path.realpath(os.path.join(os.path.dirname(__file__), '../data/KITTI/depth/train/')),
+                      subseq=subseq)
+
+
+if __name__ == '__main__':
+    save_preds_demo()
