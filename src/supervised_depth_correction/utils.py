@@ -89,76 +89,6 @@ def plot_metric(metric, metric_title, visualize=False, log_dir=None, val_scaling
     plt.close(fig)
 
 
-def interpolate_missing_pixels(
-        image: np.ndarray,
-        mask: np.ndarray,
-        method: str = 'nearest',
-        fill_value: float = -1.0
-):
-    """
-    :param image: a 2D image
-    :param mask: a 2D boolean image, True indicates missing values
-    :param method: interpolation method, one of
-        'nearest', 'linear', 'cubic'.
-    :param fill_value: which value to use for filling up data outside the
-        convex hull of known pixel values.
-        Default is 0, Has no effect for 'nearest'.
-    :return: the image with missing values interpolated
-    """
-
-    h, w = image.shape[:2]
-    if isinstance(image, np.ndarray):
-        xx, yy = np.meshgrid(np.arange(h), np.arange(w))
-    elif isinstance(image, torch.Tensor):
-        xx, yy = torch.meshgrid(torch.arange(h), torch.arange(w))
-    else:
-        raise AssertionError('Input image and mask must be both either np.ndarrays or torch.Tensors')
-
-    known_x = xx[~mask]
-    known_y = yy[~mask]
-    known_v = image[~mask]
-    missing_x = xx[mask]
-    missing_y = yy[mask]
-
-    interp_values = interpolate.griddata(
-        (known_x, known_y), known_v, (missing_x, missing_y),
-        method=method, fill_value=fill_value
-    )
-
-    if isinstance(image, np.ndarray):
-        interp_image = image.copy()
-    elif isinstance(image, torch.Tensor):
-        interp_image = image.clone()
-        interp_values = torch.as_tensor(interp_values, dtype=interp_image.dtype)
-
-    interp_image[missing_x, missing_y] = interp_values
-
-    return interp_image
-
-
-def filter_depth_outliers(depths):
-    """
-    Filters out points that are too close or too far away from camera
-    """
-    depths[depths < 2] = float('nan')
-    depths[depths > 15] = float('nan')
-    return depths
-
-
-def filter_pointcloud_outliers(pc):
-    """
-    Args:
-        pc: <gradslam.Pointclouds> or <torch.Tensor>
-    """
-    assert isinstance(pc, gradslam.Pointclouds)
-    pcd = pc.open3d(0)
-    o3d.visualization.draw_geometries([pcd])
-    pcd = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
-    o3d.visualization.draw_geometries([pcd])
-
-    return pcd
-
-
 def metrics_dataset(dataset, dataset_gt):
     """
     Computes mean MAE and RMSE values between two datasets
@@ -251,49 +181,5 @@ def save_preds_demo():
                           camera=camera)
 
 
-def depth_postprocessing_demo():
-    from gradslam import Pointclouds, RGBDImages
-    from gradslam.slam import PointFusion
-    from supervised_depth_correction.data import Dataset
-    from tqdm import tqdm
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-    subseq = "2011_09_26_drive_0002_sync"
-    depth_set = "val"
-
-    ds = Dataset(subseq, depth_type="dense", depth_set=depth_set, camera='left', zero_origin=False, device=device)
-    ds_pred = Dataset(subseq, depth_type="pred", depth_set=depth_set, camera='left', zero_origin=False, device=device)
-    assert len(ds) > 0
-    assert len(ds) == len(ds_pred)
-
-    slam = PointFusion(device=device, odom='gt', dsratio=1)
-    prev_frame = None
-    pointclouds = Pointclouds(device=device)
-
-    for i in tqdm(range(0, len(ds), 5)):
-    # for i in tqdm(range(0, 1)):
-        colors, depths, intrinsics, poses = ds[i]
-        (B, L, H, W, C) = depths.shape
-
-        # mask = torch.logical_or(depths < 2.0, depths > 40.0)
-        # mask = depths > 30.0
-        # mask = depths < 3.0
-        # depths[mask] = float('nan')
-        # depths = interpolate_missing_pixels(depths.squeeze(), mask.squeeze(), 'linear')
-        depths = depths.reshape([B, L, H, W, 1])
-
-        live_frame = RGBDImages(colors, depths, intrinsics, poses)
-        pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
-
-        prev_frame = live_frame
-
-    # visualize using open3d
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pointclouds.points_list[0].detach().cpu())
-    o3d.visualization.draw_geometries([pcd.voxel_down_sample(voxel_size=0.5)])
-
-
 if __name__ == '__main__':
-    # save_preds_demo()
-    depth_postprocessing_demo()
+    save_preds_demo()
