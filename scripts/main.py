@@ -9,8 +9,8 @@ from supervised_depth_correction.io import write, append
 from supervised_depth_correction.utils import load_model, complete_sequence
 from supervised_depth_correction.metrics import RMSE, MAE, localization_accuracy
 from supervised_depth_correction.loss import chamfer_loss
-from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, filter_depth_outliers, metrics_dataset
-
+from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, metrics_dataset
+from supervised_depth_correction.postprocessing import filter_depth_outliers
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
 CUDA_DEVICE = 0

@@ -8,7 +8,7 @@ from gradslam.slam.pointfusion import PointFusion
 from gradslam.slam.icpslam import ICPSLAM
 from gradslam import Pointclouds, RGBDImages
 from threading import RLock
-from supervised_depth_correction.utils import interpolate_missing_pixels
+from supervised_depth_correction.postprocessing import interpolate_missing_pixels
 # ROS
 import rospy
 from cv_bridge import CvBridge, CvBridgeError
