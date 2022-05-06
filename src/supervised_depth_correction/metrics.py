@@ -13,10 +13,11 @@ def RMSE(gt, pred, mask=True):
 
     if mask:
         masked = (gt > 0)
-        rmse = torch.sum( ((gt[masked] - pred[masked]) ** 2) ** (1/2) )
+        rmse = torch.sum(((gt[masked] - pred[masked]) ** 2)) / torch.sum(masked.int()).float()
+        rmse = rmse ** (1/2)
     else:
-        rmse = torch.sum( ((gt - pred) ** 2) ** (1/2) )
-    rmse /= float(gt.shape[0] * gt.shape[1] * gt.shape[2])
+        rmse = torch.sum(((gt - pred) ** 2)) / torch.numel(pred).float()
+        rmse = rmse ** (1/2)
     return rmse
 
 
@@ -30,9 +31,10 @@ def MAE(gt, pred, mask=True):
     if mask:
         masked = (gt > 0)
         mae = torch.sum(torch.abs(gt[masked] - pred[masked]))
+        mae /= torch.sum(masked.int()).float()
     else:
         mae = torch.sum(torch.abs(gt - pred))
-    mae /= float(gt.shape[0] * gt.shape[1] * gt.shape[2])
+        mae /= torch.numel(pred).float()
     return mae
 
 
