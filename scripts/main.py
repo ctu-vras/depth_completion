@@ -9,7 +9,7 @@ from supervised_depth_correction.io import write, append
 from supervised_depth_correction.utils import load_model, complete_sequence
 from supervised_depth_correction.metrics import RMSE, MAE, localization_accuracy
 from supervised_depth_correction.loss import chamfer_loss
-from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, filter_depth_outliers
+from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, filter_depth_outliers, metrics_dataset
 
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
@@ -293,9 +293,9 @@ def test(subseqs, model=None, max_clouds=4, dsratio=4):
         append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'),
                f"\ntesting of subseq: {subseq}" + '\n')
 
-        print(f"###### Running depth completion on depth data ######")
         dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse", device=DEVICE)
         if model is not None:
+            print(f"###### Running depth completion on depth data ######")
             complete_sequence(model, dataset_sparse, path_to_save, subseq, replace=COMPLETE_SEQS)
         trajectory_gt = dataset_sparse.get_gt_poses()
         trajectory_gt = torch.squeeze(trajectory_gt, 0)
@@ -315,6 +315,14 @@ def test(subseqs, model=None, max_clouds=4, dsratio=4):
         locc_acc_pred = test_loop(dataset_pred, trajectory_gt, max_clouds, dsratio, "Prediction")
         print(f"Localization accuracy prediction: {locc_acc_pred}")
         del dataset_pred, trajectory_gt
+
+        dataset_pred = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="pred", device=DEVICE)
+        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
+        print(f"###### Computing metrics ######")
+        mae, rmse = metrics_dataset(dataset_gt, dataset_pred)
+        print(mae, rmse)
+        append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"MAE {mae}, RMSE {rmse}" + '\n')
+        del dataset_pred, dataset_gt
 
     print("###### TESTING DONE ######")
 

@@ -150,6 +150,24 @@ def filter_pointcloud_outliers(pc):
     return pcd
 
 
+def metrics_dataset(dataset, dataset_gt):
+    """
+    Computes mean MAE and RMSE values between two datasets
+    """
+    assert len(dataset) == len(dataset_gt)
+    mae_data = 0
+    rmse_data = 0
+    for i in range(len(dataset)):
+        colors, depths, intrinsics, poses = dataset[i]
+        colors_gt, depths_gt, intrinsics_gt, poses_gt = dataset_gt[i]
+        mae = MAE(depths_gt, depths)
+        rmse = RMSE(depths_gt, depths)
+        mae_data += mae
+        rmse_data += rmse
+
+    return mae_data / len(dataset), rmse_data / len(dataset)
+
+
 def save_gradslam_image(img, img_path):
     """
     Save depth image from
