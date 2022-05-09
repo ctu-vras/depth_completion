@@ -21,22 +21,24 @@ BATCH_SIZE = 1
 LR = 0.001
 WEIGHT_DECAY = 0.01
 
-EPISODES_PER_SEQ = 60
+EPISODES_PER_SEQ = 1
 VISUALIZE = False
-VALIDATION_EPISODE = 5
+VALIDATION_EPISODE = 1
+
+PC_PER_MAP = 8    # number of pointclouds per training map
 
 USE_DEPTH_SELECTION = False
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
-INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-415.pth'))
+INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-1470.pth'))
 
 TRAIN = False
 TEST = True
 COMPLETE_SEQS = True    # True for creating predictions with new model
-TRAIN_MODE = "mse"      # "mse" or "chamfer"
+TRAIN_MODE = "chamfer"      # "mse" or "chamfer"
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
-def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=7, step=1, dsratio=4):
+def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_clouds=7, step=1, dsratio=4):
     slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=dsratio)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
@@ -44,7 +46,10 @@ def construct_map(ds, predictor=None, pose_provider='gt', max_clouds=7, step=1, 
 
     # TODO: check memory issue
     depths = None
-    for i in range(0, max_clouds, step):
+    for i in range(sequence_start, sequence_start+max_clouds, step):
+        if i >= len(ds):
+            continue
+
         colors, depths, intrinsics, poses = ds[i]
 
         # do forward pass
@@ -113,47 +118,59 @@ def train_chamferdist(train_subseqs, validation_subseq):
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
 
+    print("###### Loading validation data ######")
+    dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="dense",
+                             device=DEVICE)
+    dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse",
+                                 device=DEVICE)
+    global_map_val_gt, traj_val_gt, depth_sample_val_gt = construct_map(dataset_val_gt)
+    del dataset_val_gt
+
+    # iterate over training subseqs
     for subseq in train_subseqs:
         print(f"###### Starting training on subseq: {subseq} ######")
-        print("###### Loading data ######")
-        dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=True, device=DEVICE)
-        dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, gt=False, device=DEVICE)
-        dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, gt=True, device=DEVICE)
-        dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, gt=False, device=DEVICE)
-        print("###### Data loaded ######")
 
-        # create gt global map
-        global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt)
-        del dataset_gt
-        *_, depth_sample_sparse = construct_map(dataset_sparse)
-        global_map_val_gt, traj_val_gt, depth_sample_val_gt = construct_map(dataset_val_gt)
-        del dataset_val_gt
-        plot_pc(global_map_gt, "gt_dense", "training", visualize=VISUALIZE, log_dir=LOG_DIR)
-        # plot_pc(global_map_sparse, "gt_sparse", "training", visualize=VISUALIZE, log_dir=LOG_DIR)
-        print("###### Running training loop ######")
-
+        # learn EPISODES_PER_SEQ number of episodes per subseq
         for e in range(EPISODES_PER_SEQ):
-            global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=model)
+            dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
+            loss_episode = 0
+            number_of_maps = 0
+            # go sequentially over the whole subseq and construct map from PC_PER_MAP frames
+            for start_id in range(0, len(dataset_gt), PC_PER_MAP):
+                number_of_maps += 1
+                dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
+                dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse", device=DEVICE)
+                # create gt global map
+                global_map_gt, traj_gt, depth_sample_gt = construct_map(dataset_gt, sequence_start=start_id)
+                del dataset_gt
+                *_, depth_sample_sparse = construct_map(dataset_sparse, sequence_start=start_id)
+                # plot_pc(global_map_gt, "gt_dense", "training", visualize=VISUALIZE, log_dir=LOG_DIR)
+                # plot_pc(global_map_sparse, "gt_sparse", "training", visualize=VISUALIZE, log_dir=LOG_DIR)
 
-            # do backward pass
-            optimizer.zero_grad()
-            loss = chamfer_loss(global_map_episode, global_map_gt, sample_step=5)
-            loss.backward()
-            optimizer.step()
+                global_map_episode, traj_epis, depth_sample_pred = construct_map(dataset_sparse, predictor=model,
+                                                                                 sequence_start=start_id)
+                # do backward pass
+                optimizer.zero_grad()
+                loss = chamfer_loss(global_map_episode, global_map_gt, sample_step=5)
+                loss.backward()
+                optimizer.step()
+                loss_episode += loss.detach()
+
+                del global_map_episode
+            # END episode loop
 
             # print and append training metrics
-            loss_training.append(loss.detach())
-            print(f"EPISODE {episode}/{num_episodes}, loss: {loss}")
+            loss_training.append(loss_episode / number_of_maps)
+            print(f"EPISODE {episode}/{num_episodes}, loss: {loss_episode / number_of_maps}")
             rmse, mae, _ = compute_val_metrics(depth_sample_gt, depth_sample_pred, traj_gt, traj_epis)
             rmse_training.append(rmse.detach())
             mae_training.append(mae.detach())
 
             # running results save
             if episode + 1 == num_episodes or episode % (num_episodes // len(train_subseqs)) == 0:
-                plot_pc(global_map_episode, episode, "training", visualize=VISUALIZE, log_dir=LOG_DIR)
+                # plot_pc(global_map_episode, episode, "training", visualize=VISUALIZE, log_dir=LOG_DIR)
                 plot_depth(depth_sample_sparse, depth_sample_pred, depth_sample_gt, "training", episode,
                            visualize=VISUALIZE, log_dir=LOG_DIR)
-            del global_map_episode
 
             # validation
             if episode + 1 == num_episodes or episode % VALIDATION_EPISODE == 0:
@@ -174,10 +191,11 @@ def train_chamferdist(train_subseqs, validation_subseq):
                 del global_map_val_episode
 
             episode += 1
-        # END learning loop
+        # END subseq loop
 
         # free up space for next subseq
         del dataset_sparse, global_map_gt
+    # END learning loop
 
     # plot training metrics over episodes
     plot_metric(loss_training, "Training loss", visualize=VISUALIZE, log_dir=LOG_DIR)
