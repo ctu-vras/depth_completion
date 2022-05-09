@@ -10,6 +10,7 @@ from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.utils import load_model
 from supervised_depth_correction.metrics import localization_accuracy
 from supervised_depth_correction.transform import translation_norm, rotation_angle, delta_transform
+from supervised_depth_correction.postprocessing import filter_depth_outliers
 # ROS
 import rospy
 from sensor_msgs.msg import CameraInfo, PointCloud2
@@ -84,6 +85,7 @@ class GradslamROS:
         self.index = 0
         self.ds_step = 1
         self.depth_completion = rospy.get_param('~depth_completion', False)
+        self.depth_filterring = rospy.get_param('~depth_filterring', False)
         self.dc_model = load_model(rospy.get_param('~dc_model_path',
                                                    os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-539.pth'))))
         self.dc_model.to(self.device)
@@ -103,6 +105,8 @@ class GradslamROS:
 
     def slam_step(self):
         colors, depths, intrinsics, poses = self.ds[self.index * self.ds_step]
+        if self.depth_filterring:
+            depths = filter_depth_outliers(depths, min_depth=2.0, max_depth=15.0)
 
         # depth completion model forward pass
         if self.dc_model is not None and self.depth_completion:

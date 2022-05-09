@@ -80,12 +80,12 @@ def interpolate_missing_pixels(
     return interp_image
 
 
-def filter_depth_outliers(depths):
+def filter_depth_outliers(depths, min_depth=2.0, max_depth=15.0):
     """
     Filters out points that are too close or too far away from camera
     """
-    depths[depths < 2] = float('nan')
-    depths[depths > 15] = float('nan')
+    depths[depths < min_depth] = float('nan')
+    depths[depths > max_depth] = float('nan')
     return depths
 
 
@@ -104,6 +104,7 @@ def filter_pointcloud_outliers(pc):
 
 
 def depth_filterring_demo():
+    # https://machinelearningknowledge.ai/bilateral-filtering-in-python-opencv-with-cv2-bilateralfilter/
     from gradslam import Pointclouds, RGBDImages
     from gradslam.slam import PointFusion
     from supervised_depth_correction.data import Dataset
@@ -141,7 +142,6 @@ def depth_filterring_demo():
                 # depths[mask] = float('nan')
                 # depths = interpolate_missing_pixels(depths.squeeze(), mask.squeeze(), 'linear')
 
-                # https://machinelearningknowledge.ai/bilateral-filtering-in-python-opencv-with-cv2-bilateralfilter/
                 # depths = cv2.bilateralFilter(depths.squeeze().cpu().numpy(), -1, 0.03, 4.5)
                 depths = cv2.bilateralFilter(depths.squeeze().cpu().numpy(), 5, 80, 80)
                 depths = torch.as_tensor(depths.reshape([B, L, H, W, 1])).to(device)
@@ -169,6 +169,7 @@ def depth_filterring_demo():
 
 
 def depth_outlier_removal_demo():
+    # http://www.open3d.org/docs/release/tutorial/geometry/pointcloud_outlier_removal.html#Statistical-outlier-removal
     from gradslam import Pointclouds, RGBDImages
     from gradslam.slam import PointFusion
     from supervised_depth_correction.data import Dataset
