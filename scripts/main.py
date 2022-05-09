@@ -4,16 +4,18 @@ import torch
 import torch.nn as nn
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
+import cv2
+
 from supervised_depth_correction.data import Dataset
 from supervised_depth_correction.io import write, append
 from supervised_depth_correction.utils import load_model, complete_sequence
 from supervised_depth_correction.metrics import RMSE, MAE, localization_accuracy
-from supervised_depth_correction.loss import chamfer_loss
+from supervised_depth_correction.loss import chamfer_loss, MSE
 from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, metrics_dataset
 from supervised_depth_correction.postprocessing import filter_depth_outliers
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
-CUDA_DEVICE = 0
+CUDA_DEVICE = 1
 DEVICE = torch.device(f"cuda:{CUDA_DEVICE}" if torch.cuda.is_available() else "cpu")
 # DEVICE = torch.device('cpu')
 
@@ -21,7 +23,7 @@ BATCH_SIZE = 1
 LR = 0.001
 WEIGHT_DECAY = 0.01
 
-EPISODES_PER_SEQ = 1
+EPISODES_PER_SEQ = 5
 VISUALIZE = False
 VALIDATION_EPISODE = 1
 
@@ -29,16 +31,17 @@ PC_PER_MAP = 8    # number of pointclouds per training map
 
 USE_DEPTH_SELECTION = False
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', f'config/results/depth_completion_gradslam_{time.time()}')
-INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/weights-1470.pth'))
+INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__), '../config/results/weights/mse/weights-225.pth'))
 
-TRAIN = False
-TEST = True
+TRAIN = True
+TEST = False
 COMPLETE_SEQS = True    # True for creating predictions with new model
 TRAIN_MODE = "chamfer"      # "mse" or "chamfer"
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
-def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_clouds=7, step=1, dsratio=4):
+def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_clouds=7, step=1, dsratio=4,
+                  filter_depth=None):
     slam = PointFusion(device=DEVICE, odom=pose_provider, dsratio=dsratio)
     prev_frame = None
     pointclouds = Pointclouds(device=DEVICE)
@@ -58,6 +61,14 @@ def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_
             pred = predictor(depths, mask)
             depths = pred
 
+        # filter depths
+        if filter_depth == "basic":
+            depths = filter_depth_outliers(depths, min_depth=2.0, max_depth=15.0)
+        elif filter_depth == "cv2":
+            (B, L, H, W, C) = depths.shape
+            depths = cv2.bilateralFilter(depths.squeeze().cpu().numpy(), 5, 80, 80)
+            depths = torch.as_tensor(depths.reshape([B, L, H, W, 1])).to(DEVICE)
+
         live_frame = RGBDImages(colors, depths, intrinsics, poses)
         pointclouds, live_frame.poses = slam.step(pointclouds, live_frame, prev_frame)
         prev_frame = live_frame
@@ -74,13 +85,16 @@ def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_
 def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, episode_num=0, val=False, plot=False):
     loss_episode = 0
     mae_episode = 0
-    for i in range(len(dataset_gt)):
+    num_iters = min(len(dataset_gt), 200)
+    for i in range(num_iters):
         optimizer.zero_grad()
         colors_gt, depths_gt, intrinsics_gt, poses_gt = dataset_gt[i]
         colors_sparse, depths_sparse, intrinsics_sparse, poses_sparse = dataset_sparse[i]
         mask = (depths_sparse > 0).float()
         depths_pred = predictor(depths_sparse, mask)
-        loss = (criterion(depths_pred, depths_gt) * mask.detach()).sum() / mask.sum()
+        # loss = (criterion(depths_pred, depths_gt) * mask.detach()).sum() / mask.sum()
+        # loss = MSE(depths_gt, depths_pred)
+        loss = torch.sum(((depths_gt[mask] - depths_sparse[mask]) ** 2)) / torch.sum(mask.int()).float()
         if not val:
             loss.backward()
             optimizer.step()
@@ -90,7 +104,7 @@ def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, epi
     if plot:
         plot_depth(depths_sparse, depths_pred, depths_gt, "training", episode_num,
                    visualize=VISUALIZE, log_dir=LOG_DIR)
-    return loss_episode / len(dataset_gt.ids), mae_episode / len(dataset_gt.ids)
+    return loss_episode / num_iters, mae_episode / num_iters
 
 
 def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
@@ -136,7 +150,7 @@ def train_chamferdist(train_subseqs, validation_subseq):
             loss_episode = 0
             number_of_maps = 0
             # go sequentially over the whole subseq and construct map from PC_PER_MAP frames
-            for start_id in range(0, len(dataset_gt), PC_PER_MAP):
+            for start_id in range(0, min(len(dataset_gt), 1000), PC_PER_MAP):
                 number_of_maps += 1
                 dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
                 dataset_sparse = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse", device=DEVICE)
@@ -188,6 +202,8 @@ def train_chamferdist(train_subseqs, validation_subseq):
                        f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}" + '\n')
                 append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
                        f"EPISODE {episode}/{num_episodes}, Validation MAE: {mae_val}" + '\n')
+                append(os.path.join(LOG_DIR, 'Validation RMSE.txt'),
+                       f"EPISODE {episode}/{num_episodes}, Validation RMSE: {rmse_val}" + '\n')
                 del global_map_val_episode
 
             episode += 1
@@ -290,8 +306,9 @@ def train_MSE(train_subseqs, validation_subseq):
     return model
 
 
-def test_loop(dataset, trajectory_gt, max_clouds, dsratio, test_mode):
-    map, trajectory, depth_sample = construct_map(dataset, max_clouds=max_clouds, dsratio=dsratio, pose_provider='icp')
+def test_loop(dataset, trajectory_gt, max_clouds, dsratio, test_mode, filter_depth=None):
+    map, trajectory, depth_sample = construct_map(dataset, max_clouds=max_clouds, dsratio=dsratio, pose_provider='icp',
+                                                  filter_depth=filter_depth)
     loc_acc = localization_accuracy(trajectory_gt, trajectory)
     append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"Accuracy {test_mode}: {loc_acc}" + '\n')
     del map, trajectory, depth_sample
@@ -332,12 +349,19 @@ def test(subseqs, model=None, max_clouds=4, dsratio=4):
         dataset_pred = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="pred", device=DEVICE)
         locc_acc_pred = test_loop(dataset_pred, trajectory_gt, max_clouds, dsratio, "Prediction")
         print(f"Localization accuracy prediction: {locc_acc_pred}")
+
+        locc_acc_pred_filter = test_loop(dataset_pred, trajectory_gt, max_clouds, dsratio, "Prediction basic filtered",
+                                         filter_depth="basic")
+        print(f"Localization accuracy prediction with basic filtering: {locc_acc_pred_filter}")
+        locc_acc_pred_filter = test_loop(dataset_pred, trajectory_gt, max_clouds, dsratio, "Prediction cv2 filtered",
+                                         filter_depth="cv2")
+        print(f"Localization accuracy prediction with cv2 filtering: {locc_acc_pred_filter}")
         del dataset_pred, trajectory_gt
 
         dataset_pred = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="pred", device=DEVICE)
         dataset_gt = Dataset(subseq=subseq, selection=USE_DEPTH_SELECTION, depth_type="dense", device=DEVICE)
         print(f"###### Computing metrics ######")
-        mae, rmse = metrics_dataset(dataset_gt, dataset_pred)
+        mae, rmse = metrics_dataset(dataset_pred, dataset_gt)
         print(mae, rmse)
         append(os.path.join(LOG_DIR, 'loc_acc_testing.txt'), f"MAE {mae}, RMSE {rmse}" + '\n')
         del dataset_pred, dataset_gt
@@ -356,8 +380,8 @@ def main():
                      "2011_09_26_drive_0096_sync", "2011_09_28_drive_0171_sync", "2011_09_30_drive_0018_sync",
                      "2011_09_28_drive_0141_sync"]
     validation_subseq = "2011_09_28_drive_0168_sync"
-    test_subseqs = ["2011_09_26_drive_0009_sync", "2011_09_26_drive_0001_sync", "2011_09_26_drive_0018_sync",
-                    "2011_10_03_drive_0027_sync"]
+    test_subseqs = ["2011_09_26_drive_0009_sync", "2011_09_26_drive_0018_sync",
+                    "2011_10_03_drive_0027_sync", "2011_09_26_drive_0001_sync"]
     assert not any(x in test_subseqs for x in train_subseqs)
     assert validation_subseq not in train_subseqs and validation_subseq not in test_subseqs
     if TRAIN:

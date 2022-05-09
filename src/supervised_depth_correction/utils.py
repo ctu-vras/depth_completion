@@ -7,6 +7,7 @@ from PIL import Image
 from scipy import interpolate
 import numpy as np
 from .models import SparseConvNet
+from .metrics import MAE, RMSE
 
 
 def load_model(path=None):
