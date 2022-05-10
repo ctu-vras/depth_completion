@@ -15,7 +15,7 @@
             odometry: $(arg odom)
             device: $(arg device)
             depth_completion: $(arg depth_completion)
-            depth_filterring: true
+            depth_filterring: false
             depth_type: $(arg depth_type)
             kitti_sequence: $(arg kitti_sequence)
         </rosparam>
