@@ -1,4 +1,4 @@
-# [Supervised Depth Correction](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
+# [Supervised Depth Completion](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
 
 ![mapping_gradslam](docs/imgs/depth_completion_pipeline.png)
 
@@ -6,6 +6,26 @@ Please, follow the installation instruction in
 [docs/install.md](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/docs/install.md)
 before proceeding next.
 
+## Depth Completion
+
+The [KITTI Depth Completion](http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion)
+data set is utilized to train models.
+We train the model introduced in
+[J. Uhrig et al, Sparsity Invariant CNNs](http://www.cvlibs.net/publications/Uhrig2017THREEDV.pdf).
+
+During the training process the two supervisory signals are used (tested separatelly):
+
+- *Mean Squared Error (MSE) loss* computed for predicted and truth depth images,
+- *Chamfer loss* computed for predicted and truth depth clouds.
+
+The pretrained model weights are available via the following
+[link](https://drive.google.com/drive/folders/15EjnLWQu6VZAp7ukC5y0dwrTbbG1AYTK?usp=sharing)
+
+Running the training pipeline:
+```bash
+cd ./scripts
+python main.py
+```
 
 ## Differentiable SLAM and Subt simulator
 
