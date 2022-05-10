@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Staněk"
+  given-names: "Jáchym"
+  orcid: "https://orcid.org/"
+- family-names: "Agishev"
+  given-names: "Ruslan"
+  orcid: "https://orcid.org/0000-0002-9169-2684"
+title: "Supervised Depth Completion of RGB-D Measurements from Reconstruction Loss"
+version: 0.0.1
+date-released: 2022-05-20
+url: "https://github.com/RuslanAgishev/supervised_depth_correction"
