@@ -118,3 +118,19 @@ roslaunch supervised_depth_correction gradslam_kitti.launch odom:=gt depth_compl
 
 More details about the argument usage are provided in the corresponding
 [launch file](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/launch/gradslam_kitti.launch).
+
+
+## Citation
+
+Feel free to cite the package, if you find it useful for your research.
+
+```
+@software{Stanek_Supervised_Depth_Completion_2022,
+author = {Staněk, Jáchym and Agishev, Ruslan},
+month = {5},
+title = {{Supervised Depth Completion of RGB-D Measurements from Reconstruction Loss}},
+url = {https://github.com/RuslanAgishev/supervised_depth_correction},
+version = {0.0.1},
+year = {2022}
+}
+```
