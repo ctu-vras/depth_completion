@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def load_res(file, scaling_factor=1):
+def load_res(file, scaling_factor=1, zoom=None):
     """
     Loads results from a file
     We expect results in the following format:
@@ -22,12 +22,13 @@ def load_res(file, scaling_factor=1):
                 continue
             episode_num = int(line_list[1].split("/")[0])
             value = float(line_list[-1]) * scaling_factor
-            episodes.append(episode_num)
-            values.append(value)
+            if zoom is None or episode_num > zoom:
+                episodes.append(episode_num)
+                values.append(value)
     return values, episodes
 
 
-def plot_training_res(result_folder):
+def plot_training_res(result_folder, zoom=None, zoom_val=None):
     """
     Result_folder: <os.path> path to folder with following results:
     Training loss
@@ -38,13 +39,17 @@ def plot_training_res(result_folder):
     Validation RMSE
     """
 
-    training_loss, episodes_trn = load_res(os.path.join(result_folder, "Training loss.txt"))
-    validation_loss, episodes_val = load_res(os.path.join(result_folder, "Validation loss.txt"))
+    training_loss, episodes_trn = load_res(os.path.join(result_folder, "Training loss.txt"), zoom=zoom)
+    validation_loss, episodes_val = load_res(os.path.join(result_folder, "Validation loss.txt"), zoom=zoom_val)
     # MAE and RMSE are multiplied by 1000 to be in millimeters
-    training_MAE, episodes_trn_MAE = load_res(os.path.join(result_folder, "Training loss.txt"), scaling_factor=1000)
-    validation_MAE, episodes_val_MAE = load_res(os.path.join(result_folder, "Validation loss.txt"), scaling_factor=1000)
-    training_RMSE, episodes_trn_RMSE = load_res(os.path.join(result_folder, "Training loss.txt"), scaling_factor=1000)
-    validation_RMSE, episodes_val_RMSE = load_res(os.path.join(result_folder, "Validation loss.txt"), scaling_factor=1000)
+    training_MAE, episodes_trn_MAE = load_res(os.path.join(result_folder, "Training MAE.txt"), scaling_factor=1000,
+                                              zoom=zoom)
+    validation_MAE, episodes_val_MAE = load_res(os.path.join(result_folder, "Validation MAE.txt"), scaling_factor=1000,
+                                                zoom=zoom_val)
+    training_RMSE, episodes_trn_RMSE = load_res(os.path.join(result_folder, "Training RMSE.txt"), scaling_factor=1000,
+                                                zoom=zoom)
+    validation_RMSE, episodes_val_RMSE = load_res(os.path.join(result_folder, "Validation RMSE.txt"),
+                                                  scaling_factor=1000, zoom=zoom_val)
 
     # plot lines
     fig = plt.figure()
@@ -83,9 +88,9 @@ def plot_training_res(result_folder):
 
 def main():
     # plot results for Chamfer loss trained on 8 frames
-    plot_training_res("../results/training/Chamfer/map_from_single_frame")
-    plot_training_res("../results/training/Chamfer/map_from_multiple_frames")
-    plot_training_res("../results/training/MSE")
+    # plot_training_res("../results/training/Chamfer/map_from_single_frame", 0)
+    plot_training_res("../results/training/Chamfer/map_from_multiple_frames", zoom=0)
+    # plot_training_res("../results/training/MSE")
 
 
 if __name__ == '__main__':

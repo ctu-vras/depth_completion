@@ -37,7 +37,7 @@ INIT_MODEL_STATE_DICT = os.path.realpath(os.path.join(os.path.dirname(__file__),
 TRAIN = True
 TEST = False
 COMPLETE_SEQS = True    # True for creating predictions with new model
-TRAIN_MODE = "chamfer"      # "mse" or "chamfer"
+TRAIN_MODE = "mse"      # "mse" or "chamfer"
 
 
 # ------------------------------------ Helper functions ------------------------------------ #
@@ -63,7 +63,7 @@ def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_
 
         # filter depths
         if filter_depth == "basic":
-            depths = filter_depth_outliers(depths, min_depth=2.0, max_depth=15.0)
+            depths = filter_depth_outliers(depths, min_depth=5.0, max_depth=15.0)
         elif filter_depth == "cv2":
             (B, L, H, W, C) = depths.shape
             depths = cv2.bilateralFilter(depths.squeeze().cpu().numpy(), 5, 80, 80)
@@ -85,27 +85,30 @@ def construct_map(ds, predictor=None, pose_provider='gt', sequence_start=0, max_
 def episode_mse(dataset_gt, dataset_sparse, predictor, criterion, optimizer, episode_num=0, val=False, plot=False):
     loss_episode = 0
     mae_episode = 0
-    num_iters = min(len(dataset_gt), 200)
+    rmse_episode = 0
+    num_iters = min(len(dataset_gt), MAX_FRAMES)
     for i in range(num_iters):
         optimizer.zero_grad()
         colors_gt, depths_gt, intrinsics_gt, poses_gt = dataset_gt[i]
         colors_sparse, depths_sparse, intrinsics_sparse, poses_sparse = dataset_sparse[i]
         mask = (depths_sparse > 0).float()
         depths_pred = predictor(depths_sparse, mask)
-        # loss = (criterion(depths_pred, depths_gt) * mask.detach()).sum() / mask.sum()
+        loss = (criterion(depths_pred, depths_gt) * mask.detach()).sum() / mask.sum()
         # loss = MSE(depths_gt, depths_pred)
-        mask = (depths_sparse > 0)
-        loss = torch.sum(((depths_gt[mask] - depths_pred[mask]) ** 2)) / torch.sum(mask.int()).float()
+        # mask = (depths_sparse > 0)
+        # loss = torch.sum(((depths_gt[mask] - depths_pred[mask]) ** 2)) / torch.sum(mask.int()).float()
         if not val:
             loss.backward()
             optimizer.step()
         loss_episode += loss.detach().item()
         mae = MAE(depths_gt.detach(), depths_pred.detach())
+        rmse = RMSE(depths_gt.detach(), depths_pred.detach())
         mae_episode += mae
+        rmse_episode += rmse
     if plot:
         plot_depth(depths_sparse, depths_pred, depths_gt, "training", episode_num,
                    visualize=VISUALIZE, log_dir=LOG_DIR)
-    return loss_episode / num_iters, mae_episode / num_iters
+    return loss_episode / num_iters, mae_episode / num_iters, rmse_episode / num_iters
 
 
 def validation_chamfer_loss(validation_subseqs, model, episode, num_episodes):
@@ -137,6 +140,43 @@ def validation_chamfer_loss(validation_subseqs, model, episode, num_episodes):
         validation_MAE += mae_val.detach()
         validation_RMSE += rmse_val.detach()
         del global_map_val_episode, dataset_val_sparse
+
+    validation_loss = validation_loss / len(validation_subseqs)
+    validation_MAE = validation_MAE / len(validation_subseqs)
+    validation_RMSE = validation_RMSE / len(validation_subseqs)
+    print(f"EPISODE {episode}/{num_episodes}, validation loss: {validation_loss}")
+    append(os.path.join(LOG_DIR, 'Validation loss.txt'),
+           f"EPISODE {episode}/{num_episodes}, validation loss: {validation_loss}" + '\n')
+    append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
+           f"EPISODE {episode}/{num_episodes}, Validation MAE: {validation_MAE}" + '\n')
+    append(os.path.join(LOG_DIR, 'Validation RMSE.txt'),
+           f"EPISODE {episode}/{num_episodes}, Validation RMSE: {validation_RMSE}" + '\n')
+    model = model.train()
+    return validation_loss, validation_MAE, validation_RMSE
+
+
+def validation_MSE_loss(validation_subseqs, model, episode, num_episodes, criterion, optimizer):
+    validation_loss = 0
+    validation_MAE = 0
+    validation_RMSE = 0
+
+    print("###### Running validation ######")
+    model = model.eval()
+    torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{TRAIN_MODE}-{episode}.pth"))
+
+    # compute average metric over all validation subseqs
+    for validation_subseq in validation_subseqs:
+        # create datasets and maps
+        dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="dense",
+                                 device=DEVICE)
+        dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse",
+                                     device=DEVICE)
+        loss_val, mae_val, rmse_val = episode_mse(dataset_val_gt, dataset_val_sparse, model, criterion=criterion,
+                                                  optimizer=optimizer, val=True)
+
+        validation_loss += loss_val
+        validation_MAE += mae_val
+        validation_RMSE += rmse_val
 
     validation_loss = validation_loss / len(validation_subseqs)
     validation_MAE = validation_MAE / len(validation_subseqs)
@@ -270,17 +310,13 @@ def train_MSE(train_subseqs, validation_subseqs):
     loss_validation = []
     mae_training = []
     mae_validation = []
+    rmse_training = []
+    rmse_validation = []
     episode = 0
 
     num_episodes = EPISODES_PER_SEQ * len(train_subseqs)
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
-
-    print("Loading validation sequence")
-    dataset_val_gt = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="dense",
-                             device=DEVICE)
-    dataset_val_sparse = Dataset(subseq=validation_subseq, selection=USE_DEPTH_SELECTION, depth_type="sparse",
-                                 device=DEVICE)
 
     for subseq in train_subseqs:
         print(f"###### Starting training on subseq: {subseq} ######")
@@ -291,32 +327,36 @@ def train_MSE(train_subseqs, validation_subseqs):
         print("###### Running episodes  ######")
         for e in range(EPISODES_PER_SEQ):
             if episode + 1 == num_episodes or episode % (num_episodes // len(train_subseqs)) == 0:
-                loss, mae = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion, episode_num=episode,
+                loss, mae, rmse = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion, episode_num=episode,
                                         optimizer=optimizer, val=False, plot=True)
             else:
-                loss, mae = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion,
+                loss, mae, rmse = episode_mse(dataset_gt, dataset_sparse, model, criterion=criterion,
                                         optimizer=optimizer, val=False)
+
+            # save metrics
             loss_training.append(loss)
             mae_training.append(mae)
+            rmse_training.append(rmse)
             print(f"EPISODE {episode}/{num_episodes}, loss: {loss}")
+            append(os.path.join(LOG_DIR, 'Training loss.txt'),
+                   f"EPISODE {episode}/{num_episodes}, Training loss: {loss}" + '\n')
+            append(os.path.join(LOG_DIR, 'Training MAE.txt'),
+                   f"EPISODE {episode}/{num_episodes}, Training MAE: {mae}" + '\n')
+            append(os.path.join(LOG_DIR, 'Training RMSE.txt'),
+                   f"EPISODE {episode}/{num_episodes}, Training RMSE: {rmse}" + '\n')
 
             # validation
             if episode + 1 == num_episodes or episode % VALIDATION_EPISODE == 0:
-                torch.save(model.state_dict(), os.path.join(LOG_DIR, f"weights-{episode}.pth"))
-                loss_val, mae_val = episode_mse(dataset_val_gt, dataset_val_sparse, model, criterion=criterion,
-                                                optimizer=optimizer, val=True)
+                loss_val, mae_val, rmse_val = validation_MSE_loss(validation_subseqs, model, episode, num_episodes,
+                                                                  criterion, optimizer)
                 loss_validation.append(loss_val)
                 mae_validation.append(mae_val)
-                print(f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}")
-                append(os.path.join(LOG_DIR, 'Validation loss.txt'),
-                       f"EPISODE {episode}/{num_episodes}, validation loss: {loss_val}" + '\n')
-                append(os.path.join(LOG_DIR, 'Validation MAE.txt'),
-                       f"EPISODE {episode}/{num_episodes}, Validation MAE: {mae_val}" + '\n')
+                rmse_validation.append(rmse_val)
 
             episode += 1
         # free up space for next subseq
         del dataset_sparse, dataset_gt
-        # END learning loop
+    # END learning loop
 
     # plot training metrics over episodes
     plot_metric(loss_training, "Training loss", visualize=VISUALIZE, log_dir=LOG_DIR)
@@ -430,5 +470,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    # TODO:
-    #   improve point/depth image cloud filtering
