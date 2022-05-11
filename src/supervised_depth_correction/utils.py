@@ -7,7 +7,7 @@ from PIL import Image
 from scipy import interpolate
 import numpy as np
 from .models import SparseConvNet
-from .metrics import MAE, RMSE
+from .metrics import MAE, RMSE, localization_accuracy
 
 
 def load_model(path=None):
@@ -90,7 +90,14 @@ def plot_metric(metric, metric_title, visualize=False, log_dir=None, val_scaling
     plt.close(fig)
 
 
-def metrics_dataset(dataset, dataset_gt):
+def compute_val_metrics(depth_gt, depth_pred, traj_gt, traj_pred):
+    rmse = RMSE(depth_gt, depth_pred)
+    mae = MAE(depth_gt, depth_pred)
+    loc_acc = localization_accuracy(traj_gt, traj_pred)
+    return rmse, mae, loc_acc
+
+
+def metrics_dataset(dataset_gt, dataset):
     """
     Computes mean MAE and RMSE values between two datasets
     """
