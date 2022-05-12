@@ -146,7 +146,7 @@ Feel free to cite the package, if you find it useful for your research.
 
 ```
 @software{Stanek_Supervised_Depth_Completion_2022,
-author = {Staněk, Jáchym and Agishev, Ruslan},
+author = {Staněk, Jáchym and Agishev, Ruslan and Petříček, Tomáš and Zimmermann, Karel},
 month = {5},
 title = {{Supervised Depth Completion of RGB-D Measurements from Reconstruction Loss}},
 url = {https://github.com/RuslanAgishev/supervised_depth_correction},
