@@ -7,6 +7,12 @@ authors:
 - family-names: "Agishev"
   given-names: "Ruslan"
   orcid: "https://orcid.org/0000-0002-9169-2684"
+- family-names: "Petříček"
+  given-names: "Tomáš"
+  orcid: "https://orcid.org/0000-0002-3136-5673"
+- family-names: "Zimmermann"
+  given-names: "Karel"
+  orcid: "https://orcid.org/0000-0002-8898-4512"
 title: "Supervised Depth Completion of RGB-D Measurements from Reconstruction Loss"
 version: 0.0.1
 date-released: 2022-05-20
