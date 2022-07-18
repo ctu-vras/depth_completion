@@ -12,7 +12,7 @@
   <!-- One license tag required, multiple allowed, one license per tag -->
   <!-- Commonly used license strings: -->
   <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
-  <license>TODO</license>
+  <license>BSD 3-Clause</license>
 
 
   <!-- Url tags are optional, but multiple are allowed, one per tag -->
@@ -23,8 +23,8 @@
 
   <!-- Author tags are optional, multiple are allowed, one per tag -->
   <!-- Authors do not have to be maintainers, but could be -->
-  <!-- Example: -->
-  <!-- <author email="jane.doe@example.com">Jane Doe</author> -->
+  <author email="stanejac@fel.cvut.cz">Jachym Stanek</author>
+  <author email="agishrus@fel.cvut.cz">Ruslan Agishev</author>
 
 
   <!-- The *depend tags are used to specify dependencies -->
