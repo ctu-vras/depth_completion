@@ -7,10 +7,10 @@
     <arg name="depth_type" default="sparse" doc="Use ground truth depth clouds 'dense' or 'sparse' lidar clouds from KITTI Depth.
                                                  It doesn't make sense to set this argument to 'dense'
                                                  when 'depth_completion' is also set to 'true'"/>
-    <arg name="kitti_sequence" default="2011_09_26_drive_0009_sync" doc="Sequence name from KITTI Depth dataset"/>
+    <arg name="kitti_sequence" default="2011_09_26_drive_0001_sync" doc="Sequence name from KITTI Depth dataset"/>
 
     <!-- GradSLAM step inference on KITTI depth data -->
-    <node name="supervised_depth_correction" pkg="supervised_depth_correction" type="gradslam_data" output="screen">
+    <node name="depth_completion" pkg="depth_completion" type="gradslam_data" output="screen">
         <rosparam subst_value="true">
             odometry: $(arg odom)
             device: $(arg device)
@@ -23,5 +23,5 @@
 
     <!-- RVIZ -->
     <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"
-          args="-d $(find supervised_depth_correction)/config/rviz/config.rviz"/>
+          args="-d $(find depth_completion)/config/rviz/config.rviz"/>
 </launch>

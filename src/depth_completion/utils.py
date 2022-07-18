@@ -155,15 +155,15 @@ def complete_sequence(model, dataset, path_to_save, subseq, camera='left', repla
 
 
 def save_preds_demo():
-    from supervised_depth_correction.data import Dataset
+    from depth_completion.data import Dataset
     from tqdm import tqdm
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    model = load_model(os.path.realpath(os.path.join(os.path.dirname(__file__), '../../config/results/weights/weights-539.pth')))
+    model = load_model(os.path.realpath(os.path.join(os.path.dirname(__file__), '../../config/weights/weights.pth')))
     model = model.to(device)
     model.eval()
 
-    depth_set = 'train'
+    depth_set = 'val'
     assert depth_set == 'train' or depth_set == 'val'
     camera = 'right'
     assert camera == 'left' or camera == 'right'

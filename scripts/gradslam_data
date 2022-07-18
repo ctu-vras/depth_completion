@@ -6,11 +6,11 @@ import torch
 from gradslam.slam.pointfusion import PointFusion
 from gradslam.slam.icpslam import ICPSLAM
 from gradslam import Pointclouds, RGBDImages
-from supervised_depth_correction.data import Dataset
-from supervised_depth_correction.utils import load_model
-from supervised_depth_correction.metrics import localization_accuracy
-from supervised_depth_correction.transform import translation_norm, rotation_angle, delta_transform
-from supervised_depth_correction.postprocessing import filter_depth_outliers
+from depth_completion.data import Dataset
+from depth_completion.utils import load_model
+from depth_completion.metrics import localization_accuracy
+from depth_completion.transform import translation_norm, rotation_angle, delta_transform
+from depth_completion.postprocessing import filter_depth_outliers
 # ROS
 import rospy
 from sensor_msgs.msg import CameraInfo, PointCloud2
@@ -191,7 +191,7 @@ class GradslamROS:
 
 
 def main():
-    rospy.init_node('supervised_depth_correction_ros', log_level=rospy.DEBUG)
+    rospy.init_node('depth_completion_ros', log_level=rospy.DEBUG)
     subseqs = [
         "2011_09_26_drive_0001_sync",
         "2011_09_26_drive_0009_sync",

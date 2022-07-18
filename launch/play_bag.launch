@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <launch>
-    <arg name="bag" default="$(find supervised_depth_correction)/data/explorer_x1_rgbd_traj.bag"/>
+    <arg name="bag" default="$(find depth_completion)/data/explorer_x1_rgbd_traj.bag"/>
     <arg name="start" default="0.0"/>
     <arg name="rate" default="1.0"/>
 
@@ -10,7 +10,7 @@
         Workaround for /tf_static problems with rosbag.
         TODO Watch https://github.com/ros/geometry2/issues/181
     -->
-    <node name="play_tf_static" pkg="supervised_depth_correction" type="play_tf_static"
+    <node name="play_tf_static" pkg="depth_completion" type="play_tf_static"
          args="$(arg bag)" output="log">
         <remap from="~tf_static" to="/tf_static"/>
     </node>

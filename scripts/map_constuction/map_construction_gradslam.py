@@ -19,8 +19,8 @@ from chamferdist_forward import chamfer_distance_forward
 
 # dataset_path = '/home/jachym/BAKAL/gradslam/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj/'
 # mesh_path = '/home/jachym/BAKAL/gradslam/ros_ws/src/gradslam_ros/data/meshes-20211022T092424Z-001/meshes/simple_cave_01.obj'
-dataset_path = '/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj/'
-mesh_path = '/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/src/gradslam_ros/data/meshes/simple_cave_01.obj'
+dataset_path = '/home/ruslan/subt/DepthCorrection/depth_completion/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj/'
+mesh_path = '/home/ruslan/subt/DepthCorrection/depth_completion/ros_ws/src/gradslam_ros/data/meshes/simple_cave_01.obj'
 N = 100
 w = 320
 h = 240

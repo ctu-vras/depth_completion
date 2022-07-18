@@ -1,5 +1,5 @@
-from supervised_depth_correction.data import Dataset
-from supervised_depth_correction.models import DnCNN_c, SparseConvNet
+from depth_completion.data import Dataset
+from depth_completion.models import DnCNN_c, SparseConvNet
 import torch
 import open3d as o3d
 import numpy as np

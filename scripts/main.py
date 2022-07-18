@@ -6,13 +6,13 @@ from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
 import cv2
 
-from supervised_depth_correction.data import Dataset
-from supervised_depth_correction.io import write, append
-from supervised_depth_correction.utils import load_model, complete_sequence
-from supervised_depth_correction.metrics import RMSE, MAE, localization_accuracy
-from supervised_depth_correction.loss import chamfer_loss, MSE
-from supervised_depth_correction.utils import plot_depth, plot_pc, plot_metric, metrics_dataset
-from supervised_depth_correction.postprocessing import filter_depth_outliers
+from depth_completion.data import Dataset
+from depth_completion.io import write, append
+from depth_completion.utils import load_model, complete_sequence
+from depth_completion.metrics import RMSE, MAE, localization_accuracy
+from depth_completion.loss import chamfer_loss, MSE
+from depth_completion.utils import plot_depth, plot_pc, plot_metric, metrics_dataset
+from depth_completion.postprocessing import filter_depth_outliers
 
 # ------------------------------------ GLOBAL PARAMETERS ------------------------------------ #
 CUDA_DEVICE = 1

@@ -1,9 +1,9 @@
-# [Supervised Depth Completion](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
+# [Depth Completion](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
 
 ![mapping_gradslam](docs/imgs/depth_completion_pipeline.png)
 
 Please, follow the installation instruction in
-[docs/install.md](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/docs/install.md)
+[docs/install.md](https://github.com/RuslanAgishev/depth_completion/blob/main/docs/install.md)
 before proceeding next.
 
 ## Depth Completion
@@ -44,7 +44,7 @@ dataset.
 Explore the depth images data from the simulator (requires
 [Open3D](https://github.com/isl-org/Open3D)
 installation):
-[./notebooks/explore_data.ipynb](https://github.com/RuslanAgishev/supervised_depth_correction/blob/master/notebooks/explore_data.ipynb)
+[./notebooks/explore_data.ipynb](https://github.com/RuslanAgishev/depth_completion/blob/master/notebooks/explore_data.ipynb)
 
 
 ### Mapping with [GradSLAM](https://github.com/gradslam/gradslam)
@@ -53,7 +53,7 @@ installation):
 
 Construct a map from RGBD images input:
 ```
-roslaunch supervised_depth_correction gradslam_bag.launch odom:=gt
+roslaunch depth_completion gradslam_bag.launch odom:=gt
 ```
 
 You may also want to visualize a ground truth mesh of the world by passing the additional argument:
@@ -75,7 +75,7 @@ of some cave worlds.
 And place them to `./data/meshes/` folder.
 
 Compare map to mesh
-[./notebooks/compare_gt_map_mesh_to_point_cloud.ipynb](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/notebooks/compare_gt_map_mesh_to_point_cloud.ipynb)
+[./notebooks/compare_gt_map_mesh_to_point_cloud.ipynb](https://github.com/RuslanAgishev/depth_completion/blob/main/notebooks/compare_gt_map_mesh_to_point_cloud.ipynb)
 
 It will compare a point cloud to a mesh using the following functions:
 - the closest distance from
@@ -105,7 +105,7 @@ You can download prerecorded data from
 [here](https://drive.google.com/file/d/1kFbH38nbsHm7UR1B9Du3A0BcjLG1CiSR/view?usp=sharing).
 Ones you have a recorded bag-file, convert it to the ICL-NUIM format:
 ```bash
-roslaunch supervised_depth_correction bag2icl.launch bag:=<full/path/to/bag/file.bag>
+roslaunch depth_completion bag2icl.launch bag:=<full/path/to/bag/file.bag>
 ```
 
 ## GradSLAM and [KITTI Depth](http://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_completion)
@@ -118,7 +118,7 @@ We utilize camera poses from the KITTI Raw dataset (GPS + IMU) and depth measure
 Ones you have the data downloaded, please, move it (or create symbolic links) to the following locations:
 
 ```bash
-supervised_depth_correction/data/
+depth_completion/data/
 ├── KITTI
 │   ├── depth -> ~/data/datasets/KITTI/depth/
 │   └── raw -> ~/data/datasets/KITTI/raw/
@@ -133,11 +133,11 @@ Running GradSLAM on a KITTI Depth sequence with the following configurations:
 - the pipeline is running on GPU.
 
 ```bash
-roslaunch supervised_depth_correction gradslam_kitti.launch odom:=gt depth_completion:=1 depth_type:=sparse device:='cuda:0'
+roslaunch depth_completion gradslam_kitti.launch odom:=gt depth_completion:=1 depth_type:=sparse device:='cuda:0'
 ```
 
 More details about the argument usage are provided in the corresponding
-[launch file](https://github.com/RuslanAgishev/supervised_depth_correction/blob/main/launch/gradslam_kitti.launch).
+[launch file](https://github.com/RuslanAgishev/depth_completion/blob/main/launch/gradslam_kitti.launch).
 
 
 ## Citation
@@ -149,7 +149,7 @@ Feel free to cite the package, if you find it useful for your research.
 author = {Staněk, Jáchym and Agishev, Ruslan},
 month = {5},
 title = {{Supervised Depth Completion of RGB-D Measurements from Reconstruction Loss}},
-url = {https://github.com/RuslanAgishev/supervised_depth_correction},
+url = {https://github.com/RuslanAgishev/depth_completion},
 version = {0.0.1},
 year = {2022}
 }

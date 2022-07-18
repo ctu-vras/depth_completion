@@ -9,10 +9,10 @@ from tqdm import tqdm
 import torch
 from PIL import Image
 import pykitti
-from supervised_depth_correction.io import write, append
+from depth_completion.io import write, append
 
 
-# the following paths assume that you have the datasets or symlinks in supervised_depth_correction/data folder
+# the following paths assume that you have the datasets or symlinks in depth_completion/data folder
 RAW_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'KITTI', 'raw'))
 DEPTH_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'KITTI', 'depth'))
 DEPTH_SELECTION_DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', 'data',

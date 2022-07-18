@@ -29,8 +29,8 @@ def main():
     # used ICL dataset has been shrunk to 1% of its original size to be able to run it locally on GPU
     path_ICL = "/home/jachym/MEGAsync/KYR/Bakalarka/ICL-dataset/"
     path_noisy_data = "/home/jachym/MEGAsync/KYR/Bakalarka/ICL-noise/"
-    # path_ICL = "/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj_1637329950.7370088"
-    # path_noisy_data = "/home/ruslan/subt/DepthCorrection/supervised_depth_correction/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj_1637329950.7370088"
+    # path_ICL = "/home/ruslan/subt/DepthCorrection/depth_completion/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj_1637329950.7370088"
+    # path_noisy_data = "/home/ruslan/subt/DepthCorrection/depth_completion/ros_ws/src/gradslam_ros/data/explorer_x1_rgbd_traj_1637329950.7370088"
 
     # -------------- unpack data -------------- #
     dataset_ICL = ICL(path_ICL, seqlen=4)

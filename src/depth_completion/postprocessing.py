@@ -107,7 +107,7 @@ def depth_filterring_demo():
     # https://machinelearningknowledge.ai/bilateral-filtering-in-python-opencv-with-cv2-bilateralfilter/
     from gradslam import Pointclouds, RGBDImages
     from gradslam.slam import PointFusion
-    from supervised_depth_correction.data import Dataset
+    from depth_completion.data import Dataset
     from tqdm import tqdm
     import cv2
 
@@ -172,7 +172,7 @@ def depth_outlier_removal_demo():
     # http://www.open3d.org/docs/release/tutorial/geometry/pointcloud_outlier_removal.html#Statistical-outlier-removal
     from gradslam import Pointclouds, RGBDImages
     from gradslam.slam import PointFusion
-    from supervised_depth_correction.data import Dataset
+    from depth_completion.data import Dataset
     from tqdm import tqdm
 
     # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -220,7 +220,7 @@ def hidden_points_removal_demo():
     # http://www.open3d.org/docs/latest/tutorial/Basic/pointcloud.html#Hidden-point-removal
     from gradslam import Pointclouds, RGBDImages
     from gradslam.slam import PointFusion
-    from supervised_depth_correction.data import Dataset
+    from depth_completion.data import Dataset
     from tqdm import tqdm
 
     # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

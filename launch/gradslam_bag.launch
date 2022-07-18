@@ -8,13 +8,13 @@
     <param name="use_sim_time" value="true"/>
 
     <include file="$(dirname)/play_bag.launch">
-        <arg name="bag" value="$(find supervised_depth_correction)/data/explorer_x1_rgbd_traj_2021-09-22-14-34-21.bag"/>
+        <arg name="bag" value="$(find depth_completion)/data/explorer_x1_rgbd_traj_2021-09-22-14-34-21.bag"/>
         <arg name="start" value="0.0"/>
         <arg name="rate" value="0.3"/>
     </include>
 
     <!-- GradSLAM step inference on bag file -->
-    <node name="supervised_depth_correction" pkg="supervised_depth_correction" type="gradslam_bag" output="screen">
+    <node name="depth_completion" pkg="depth_completion" type="gradslam_bag" output="screen">
         <rosparam subst_value="true">
             odometry: $(arg odom)
             device: $(arg device)
@@ -23,9 +23,9 @@
 
     <!-- GT mesh of the world publisher -->
     <node if="$(arg pub_gt_mesh)"
-          name="gt_world_publisher" pkg="supervised_depth_correction" type="gt_world_pub" output="screen"/>
+          name="gt_world_publisher" pkg="depth_completion" type="gt_world_pub" output="screen"/>
 
     <!-- RVIZ -->
     <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"
-          args="-d $(find supervised_depth_correction)/config/rviz/config.rviz"/>
+          args="-d $(find depth_completion)/config/rviz/config.rviz"/>
 </launch>

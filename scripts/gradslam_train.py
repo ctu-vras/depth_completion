@@ -1,13 +1,13 @@
 import os
 import time
 import torch
-from supervised_depth_correction.data import Dataset
-from supervised_depth_correction.models import SparseConvNet
+from depth_completion.data import Dataset
+from depth_completion.models import SparseConvNet
 import matplotlib.pyplot as plt
 from gradslam import Pointclouds, RGBDImages
 from gradslam.slam import PointFusion
-from supervised_depth_correction.utils import plot_pc
-from supervised_depth_correction.loss import chamfer_loss
+from depth_completion.utils import plot_pc
+from depth_completion.loss import chamfer_loss
 """
 Demo to show that gradient are propagated through SLAM pipeline with KITTI dataset
 training is dome only on single image for simplicity
