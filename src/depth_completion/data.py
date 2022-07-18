@@ -166,7 +166,7 @@ class KITTIDepth:
         return len(self.ids)
 
     def __getitem__(self, i):
-        assert i in self.ids
+        i = self.ids[i]
         intrins = self.get_intrinsics(i)
         rgb = self.get_rgb(i)
         depth = self.get_depth(i)
@@ -258,6 +258,8 @@ class Dataset:
             self.ds_depths = KITTIDepth(subseq=subseq, depth_type=depth_type, mode=depth_set, camera=camera)
         self.poses = self.ds_poses.poses
         self.ids = self.ds_depths.ids
+        self.poses = self.poses[self.ids]
+        assert len(self.ids) == len(self.poses)
 
         # move poses to origin to 0:
         if zero_origin:
@@ -281,7 +283,7 @@ class Dataset:
                   intrinsics: torch.Tensor (B x N x 4 x 4)
                   poses: torch.Tensor (B x N x 4 x 4)
         """
-        colors, depths, K = self.ds_depths[self.ids[i]]
+        colors, depths, K = self.ds_depths[i]
 
         # for p1, p2 in zip(self.poses, self.ds_poses.poses):
         #     assert np.allclose(p1, p2)
