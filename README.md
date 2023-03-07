@@ -1,10 +1,16 @@
-# [Depth Completion](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
+# [Supervised Depth Completion of RGB-D Measurements from Reconstruction Loss](https://docs.google.com/document/d/17J_ckwe_O4rgceCp6kVXL7DN4urH3mCqgWJ3b4MlOI4/edit?usp=sharing)
+
+The core of the depth completion pipeline is the differentiable SLAM module, which takes as input RGB-D data and outputs camera trajectory and point cloud map estimate.
+However, the input sensory data could have noise and missing depth values.
+Therefore a Depth Completion module is introduced. It is applied to raw RGB-D frames before the propagation of the depth measurements through the SLAM module. 
+For more information, please, refer to the [thesis](https://dspace.cvut.cz/bitstream/handle/10467/100864/F3-BP-2022-Stanek-Jachym-Machine_Learning_for_Robotic_Exploration.pdf).
 
 ![mapping_gradslam](docs/imgs/depth_completion_pipeline.png)
 
-Please, follow the installation instruction in
-[docs/install.md](https://github.com/RuslanAgishev/depth_completion/blob/main/docs/install.md)
-before proceeding next.
+## Installation
+
+The installation instructions are available at
+[docs/install.md](https://github.com/RuslanAgishev/depth_completion/blob/main/docs/install.md).
 
 ## Depth Completion
 
